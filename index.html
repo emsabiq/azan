@@ -13,7 +13,8 @@
     #bg-video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
     .widget-strip{
       position:fixed;left:50%;transform:translateX(-50%);bottom:0;
-      width:clamp(260px,96vw,880px);padding:6px 10px;border-radius:12px 12px 0 0;
+      width:clamp(260px,96vw,880px);padding:6px 10px; padding-bottom:calc(6px + env(safe-area-inset-bottom));
+      border-radius:12px 12px 0 0;
       background:rgba(15,27,24,.45);color:#fff;display:flex;gap:8px;align-items:center;justify-content:space-between;
       z-index:9999;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif
     }
@@ -34,7 +35,7 @@
   <div class="widget-strip" role="region" aria-label="Widget jadwal sholat">
     <div class="left">
       <span class="dot" aria-hidden="true"></span>
-      <b id="current-time">--:--:--</b>
+      <b id="current-time" aria-live="polite">--:--:--</b>
       <span class="tz">WIB • Asia/Jakarta</span>
     </div>
 
@@ -57,9 +58,7 @@
     <source src="assets/indonesia-raya.mp3" type="audio/mpeg" />
   </audio>
 
-  <!-- JS utama (RELATIF, pakai versi terbaru app.js kamu) -->
-<script src="js/app.js?v=4" defer></script>
-
+  <!-- JS utama (RELATIF) -->
+  <script src="js/app.js?v=4" defer></script>
 </body>
 </html>
-
