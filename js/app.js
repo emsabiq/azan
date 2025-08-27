@@ -7,6 +7,17 @@ const KOTA_CACHE_KEY = 'myq_kota_medan_id';
 const LAST_INDONESIA_KEY = 'lastPlayedIndonesia';
 const LAST_ADZAN_KEY = 'lastPlayedAdzanKey';
 
+// ====== FEATURE/FALLBACK UNTUK TV LAWAS ======
+document.addEventListener('DOMContentLoaded', () => {
+  // Deteksi dukungan backdrop-filter (banyak TV lawas tidak support)
+  const lackBackdrop = !(window.CSS && CSS.supports && (CSS.supports('backdrop-filter','blur(4px)') || CSS.supports('-webkit-backdrop-filter','blur(4px)')));
+  if (lackBackdrop) document.documentElement.classList.add('no-bdf');
+
+  // Mode TV otomatis (atau pakai ?tv=1 di URL untuk memaksa)
+  const isTV = /Tizen|Web0S|WebOS|SmartTV|Hisense|AOSP|Android TV/i.test(navigator.userAgent) || new URLSearchParams(location.search).has('tv');
+  if (isTV) document.documentElement.classList.add('tv-mode');
+});
+
 // ====== UTIL WAKTU WIB ======
 function getWIBParts(d = new Date()) {
   const parts = new Intl.DateTimeFormat('id-ID', {
@@ -24,25 +35,60 @@ function getWIBParts(d = new Date()) {
   };
 }
 
-// ====== VIDEO LOADER ======
-async function pickVideoSrc() {
-  const { ymd } = getWIBParts();
-  const today = `${VIDEO_BASE}/${ymd}.mp4`;
-  if (await exists(today)) return today;
-  if (await exists(`${VIDEO_BASE}/latest.mp4`)) return `${VIDEO_BASE}/latest.mp4`;
-  if (await exists(`${VIDEO_BASE}/default.mp4`)) return `${VIDEO_BASE}/default.mp4`;
-  return ''; // none
-}
-async function exists(url) {
-  try {
-    const r = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-    return r.ok;
-  } catch { return false; }
-}
+// ====== VIDEO LOADER (TV-SAFE, NO HEAD) ======
 async function loadVideo() {
   const el = document.getElementById('bg-video');
-  const src = await pickVideoSrc();
-  if (src) el.src = `${src}?v=${Date.now()}`; // cache-bust
+  if (!el) return;
+
+  // Kandidat berurutan (hari ini -> latest -> default)
+  const { ymd } = getWIBParts();
+  const candidates = [
+    `${VIDEO_BASE}/${ymd}.mp4`,
+    `${VIDEO_BASE}/latest.mp4`,
+    `${VIDEO_BASE}/default.mp4`
+  ];
+
+  for (const src of candidates) {
+    const ok = await tryAttachVideo(el, src);
+    if (ok) { setStatus('Video siap'); return; }
+  }
+
+  // Jika semua gagal, kosongkan video & biarkan widget saja
+  el.removeAttribute('src');
+  try { el.load?.(); } catch {}
+  setStatus('Video tidak didukung — hanya widget aktif');
+}
+
+function tryAttachVideo(el, src) {
+  return new Promise((resolve) => {
+    let done = false;
+    const cleanup = () => {
+      el.removeEventListener('loadedmetadata', onLoaded);
+      el.removeEventListener('error', onError);
+      if (timer) clearTimeout(timer);
+    };
+    const onLoaded = () => {
+      if (done) return; done = true; cleanup();
+      // Siapkan parameter autoplay
+      el.autoplay = true; el.muted = true; el.loop = true; el.playsInline = true;
+      el.play().catch(()=>{ /* beberapa TV butuh waktu, abaikan */ });
+      resolve(true);
+    };
+    const onError = () => {
+      if (done) return; done = true; cleanup();
+      resolve(false);
+    };
+
+    // Timeout untuk menghindari hang pada TV lambat
+    const timer = setTimeout(() => {
+      if (!done) { done = true; cleanup(); resolve(false); }
+    }, 6000);
+
+    // Pasang source + cache-bust
+    el.src = `${src}?v=${Date.now()}`;
+    el.addEventListener('loadedmetadata', onLoaded, { once:true });
+    el.addEventListener('error', onError, { once:true });
+  });
 }
 
 // ====== MYQURAN v2 ======
@@ -81,14 +127,17 @@ async function fetchJadwal() {
 }
 
 // ====== CLOCK + PEMICU AUDIO ======
-const elClock = document.getElementById('current-time');
+const elClock  = document.getElementById('current-time');
 const elStatus = document.getElementById('status-pill');
 const adzanAudio = document.getElementById('adzan-audio');
 const indoAudio  = document.getElementById('indonesia-raya');
 
 let lastPlayedAdzanKey = localStorage.getItem(LAST_ADZAN_KEY) || '';
 
-function setStatus(text){ if (elStatus) elStatus.textContent = text; }
+function setStatus(text){
+  if (elStatus) elStatus.textContent = text;
+  try { console.log('[STATUS]', text); } catch {}
+}
 
 function updateClockAndTriggers() {
   const { hhmmss, hhmm, ymd } = getWIBParts();
@@ -145,7 +194,6 @@ async function playLagu(audioEl) {
   try {
     if (!soundUnlocked) await primeAutoplay();
     audioEl.loop = false; audioEl.muted = false; audioEl.currentTime = 0; audioEl.volume = 1;
-    // Pastikan jika sebelumnya adzanAudio sedang muted-play untuk prime: unmute saja
     if (audioEl.paused) await audioEl.play();
   } catch (e) { console.warn('Play blocked:', e); throw e; }
 }
