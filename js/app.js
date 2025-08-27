@@ -17,22 +17,30 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ====== UTIL WAKTU WIB (Intl Asia/Jakarta, fallback manual UTC+7 bila perlu) ======
-// ====== UTIL WAKTU WIB ======
+// ====== UTIL WAKTU WIB (manual, kebal timezone TV) ======
 function getWIBParts(d = new Date()) {
-  const parts = new Intl.DateTimeFormat('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  }).formatToParts(d);
-  const pick = t => parts.find(p => p.type === t)?.value;
+  const pad2 = n => (n < 10 ? '0' + n : '' + n);
+
+  // Konversi waktu lokal -> UTC -> geser ke WIB (UTC+7)
+  const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
+  const w = new Date(utcMs + 7 * 3600 * 1000);
+
+  // Ambil komponen dengan getter UTC karena epoch sudah digeser ke WIB
+  const y  = w.getUTCFullYear();
+  const m  = pad2(w.getUTCMonth() + 1);
+  const dd = pad2(w.getUTCDate());
+  const hh = pad2(w.getUTCHours());
+  const mm = pad2(w.getUTCMinutes());
+  const ss = pad2(w.getUTCSeconds());
+
   return {
-    y: pick('year'), m: pick('month'), d: pick('day'),
-    hh: pick('hour'), mm: pick('minute'), ss: pick('second'),
-    hhmm: `${pick('hour')}:${pick('minute')}`,
-    hhmmss: `${pick('hour')}:${pick('minute')}:${pick('second')}`,
-    ymd: `${pick('year')}-${pick('month')}-${pick('day')}`
+    y, m, d: dd, hh, mm, ss,
+    hhmm:   `${hh}:${mm}`,
+    hhmmss: `${hh}:${mm}:${ss}`,
+    ymd:    `${y}-${m}-${dd}`
   };
 }
+
 
 // ====== VIDEO LOADER (TV-SAFE, NO HEAD) ======
 async function loadVideo() {
@@ -250,5 +258,6 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
+
 
 
