@@ -1,10 +1,10 @@
-// ====== KONFIG ======
+// ====== KONFIGURASI ======
 const VIDEO_BASE = 'videos';
 const KOTA_CACHE_KEY = 'myq_kota_medan_id';
 const LAST_INDONESIA_KEY = 'lastPlayedIndonesia';
 const LAST_ADZAN_KEY = 'lastPlayedAdzanKey';
 
-// Deteksi TV (opsional untuk tweak kecil)
+// Deteksi TV (opsional)
 const IS_TV = /Tizen|Web0S|WebOS|SmartTV|Hisense|AOSP|Android TV/i.test(navigator.userAgent)
            || new URLSearchParams(location.search).has('tv');
 
@@ -14,24 +14,29 @@ document.addEventListener('DOMContentLoaded', () => {
   if (IS_TV) document.documentElement.classList.add('tv-mode');
 });
 
-// ====== WIB helper (tanpa Intl) ======
-const p = n => (n<10?'0'+n:''+n);
+// ====== WIB helper (tanpa Intl, aman di TV) ======
+function pad2(n){ return n<10 ? '0'+n : ''+n; }
 function getWIBParts(now=new Date()){
-  const utcMs = now.getTime() + now.getTimezoneOffset()*60000;   // UTC
-  const w = new Date(utcMs + 7*3600*1000);                       // +7 (WIB)
-  const y=w.getUTCFullYear(), m=p(w.getUTCMonth()+1), d=p(w.getUTCDate());
-  const hh=p(w.getUTCHours()), mm=p(w.getUTCMinutes()), ss=p(w.getUTCSeconds());
+  // Cara paling aman: konversi ke UTC lalu tambah +7 jam (WIB).
+  const utcMs = now.getTime() + now.getTimezoneOffset()*60000; // UTC ms
+  const wib = new Date(utcMs + 7*3600*1000);                   // UTC+7
+  const y  = wib.getUTCFullYear();
+  const m  = pad2(wib.getUTCMonth()+1);
+  const d  = pad2(wib.getUTCDate());
+  const hh = pad2(wib.getUTCHours());
+  const mm = pad2(wib.getUTCMinutes());
+  const ss = pad2(wib.getUTCSeconds());
   return { y,m,d, hh,mm,ss, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}`, ymd:`${y}-${m}-${d}` };
 }
 
 // ====== STATUS ======
 function setStatus(t){ const el=document.getElementById('status-pill'); if(el) el.textContent=t; }
 
-// ====== VIDEO LOADER (Tizen safe) ======
+// ====== VIDEO LOADER (Tizen-safe) ======
 function ensurePiPOff(v){
   try{
     v.disablePictureInPicture = true; v.setAttribute('disablepictureinpicture','');
-    v.disableRemotePlayback = true; v.setAttribute('controlslist','nodownload noplaybackrate noremoteplayback');
+    v.disableRemotePlayback = true;   v.setAttribute('controlslist','nodownload noplaybackrate noremoteplayback');
   }catch{}
 }
 async function loadVideo(){
@@ -49,12 +54,12 @@ async function loadVideo(){
     const ok = await attachAndTryPlay(v, src);
     if (ok){
       setStatus('Video siap');
-      // “Keep alive” untuk TV yang suka nge-pause sendiri
+      // keep-alive (beberapa TV suka pause sendiri)
       setInterval(()=>{ if (v.paused && v.readyState>=2) v.play().catch(()=>{}); }, 15000);
       return;
     }
   }
-  // Gagal semua → sembunyikan
+  // Gagal semua → sembunyikan source agar tidak layar hitam
   try{ v.pause(); }catch{}
   while(v.firstChild) v.removeChild(v.firstChild);
   try{ v.load?.(); }catch{}
@@ -64,7 +69,7 @@ function attachAndTryPlay(v, src){
   return new Promise((resolve)=>{
     while(v.firstChild) v.removeChild(v.firstChild);
 
-    // deklarasi codec eksplisit (Tizen picky)
+    // Deklarasi codec eksplisit (Tizen picky)
     const s1=document.createElement('source'); s1.src=src; s1.type='video/mp4; codecs="avc1.4D401E, mp4a.40.2"';
     const s2=document.createElement('source'); s2.src=src; s2.type='video/mp4; codecs="avc1.42E01E, mp4a.40.2"';
     v.appendChild(s1); v.appendChild(s2);
@@ -84,7 +89,7 @@ function attachAndTryPlay(v, src){
 
     try{ v.load(); }catch{}
     v.play().catch(()=>{});
-    // tombol manual kalau autoplay ditolak
+    // Tombol manual (OK/Enter) jika autoplay ditolak
     setTimeout(()=>{ if(v.paused) showManualStart(v); }, 2500);
   });
 }
@@ -161,7 +166,7 @@ async function playLagu(el){
 function updateClockAndTriggers(){
   const {hhmmss, hhmm, ymd}=getWIBParts();
 
-  // Re-bind setiap tick → jam pasti hidup
+  // Re-bind tiap tick (jangan cache)
   const clk=document.getElementById('current-time');
   if(clk) clk.textContent=hhmmss;
 
