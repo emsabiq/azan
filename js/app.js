@@ -17,30 +17,29 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ====== UTIL WAKTU WIB (Intl Asia/Jakarta, fallback manual UTC+7 bila perlu) ======
-function getWIBParts(d = new Date()) {
-  try {
-    const parts = new Intl.DateTimeFormat('id-ID', {
-      timeZone: 'Asia/Jakarta',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-    }).formatToParts(d);
-    const pick = t => parts.find(p => p.type === t)?.value;
-    return {
-      y: pick('year'), m: pick('month'), d: pick('day'),
-      hh: pick('hour'), mm: pick('minute'), ss: pick('second'),
-      hhmm: `${pick('hour')}:${pick('minute')}`,
-      hhmmss: `${pick('hour')}:${pick('minute')}:${pick('second')}`,
-      ymd: `${pick('year')}-${pick('month')}-${pick('day')}`
-    };
-  } catch {
-    // Fallback manual UTC+7 (jaga-jaga kalau Intl/timeZone gak didukung)
-    const pad2 = n => (n < 10 ? '0' + n : '' + n);
-    const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
-    const w = new Date(utcMs + 7 * 3600 * 1000);
-    const y = w.getUTCFullYear(), m = pad2(w.getUTCMonth() + 1), dd = pad2(w.getUTCDate());
-    const hh = pad2(w.getUTCHours()), mm = pad2(w.getUTCMinutes()), ss = pad2(w.getUTCSeconds());
-    return { y, m, d: dd, hh, mm, ss, hhmm: `${hh}:${mm}`, hhmmss: `${hh}:${mm}:${ss}`, ymd: `${y}-${m}-${dd}` };
-  }
+// ====== UTIL WAKTU WIB (manual, kebal dari timezone TV) ======
+function pad2(n){ return n < 10 ? '0'+n : ''+n; }
+
+function getWIBParts(now = new Date()){
+  // Ambil epoch UTC dari waktu lokal perangkat
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  // Geser ke WIB = UTC + 7 jam
+  const w = new Date(utcMs + 7 * 3600 * 1000);
+
+  // Pakai getter UTC karena epoch sudah digeser ke WIB
+  const y  = w.getUTCFullYear();
+  const m  = pad2(w.getUTCMonth() + 1);
+  const d  = pad2(w.getUTCDate());
+  const hh = pad2(w.getUTCHours());
+  const mm = pad2(w.getUTCMinutes());
+  const ss = pad2(w.getUTCSeconds());
+
+  return {
+    y, m, d, hh, mm, ss,
+    hhmm:   `${hh}:${mm}`,
+    hhmmss: `${hh}:${mm}:${ss}`,
+    ymd:    `${y}-${m}-${d}`
+  };
 }
 
 // ====== VIDEO LOADER (TV-SAFE, NO HEAD) ======
@@ -259,3 +258,4 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
+
