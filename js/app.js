@@ -16,31 +16,20 @@ document.addEventListener('DOMContentLoaded', () => {
   if (isTV) document.documentElement.classList.add('tv-mode');
 });
 
-// ====== UTIL WAKTU WIB (Intl Asia/Jakarta, fallback manual UTC+7 bila perlu) ======
 // ====== UTIL WAKTU WIB (manual, kebal timezone TV) ======
 function getWIBParts(d = new Date()) {
   const pad2 = n => (n < 10 ? '0' + n : '' + n);
-
-  // Konversi waktu lokal -> UTC -> geser ke WIB (UTC+7)
+  // lokal -> UTC -> WIB (+7 jam)
   const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
   const w = new Date(utcMs + 7 * 3600 * 1000);
-
-  // Ambil komponen dengan getter UTC karena epoch sudah digeser ke WIB
   const y  = w.getUTCFullYear();
   const m  = pad2(w.getUTCMonth() + 1);
   const dd = pad2(w.getUTCDate());
   const hh = pad2(w.getUTCHours());
   const mm = pad2(w.getUTCMinutes());
   const ss = pad2(w.getUTCSeconds());
-
-  return {
-    y, m, d: dd, hh, mm, ss,
-    hhmm:   `${hh}:${mm}`,
-    hhmmss: `${hh}:${mm}:${ss}`,
-    ymd:    `${y}-${m}-${dd}`
-  };
+  return { y, m, d: dd, hh, mm, ss, hhmm: `${hh}:${mm}`, hhmmss: `${hh}:${mm}:${ss}`, ymd: `${y}-${m}-${dd}` };
 }
-
 
 // ====== VIDEO LOADER (TV-SAFE, NO HEAD) ======
 async function loadVideo() {
@@ -92,7 +81,7 @@ function tryAttachVideo(el, src) {
     const onError = () => { if (done) return; done = true; cleanup(); resolve(false); };
     const timer = setTimeout(() => { if (!done) { done = true; cleanup(); resolve(false); } }, 6000);
 
-    // Pakai cache-bust (kamu sebut ini lancar di setup-mu)
+    // Pakai cache-bust (setup-mu lancar pakai ini)
     el.src = `${src}?v=${Date.now()}`;
     el.addEventListener('loadedmetadata', onLoaded, { once:true });
     el.addEventListener('error', onError, { once:true });
@@ -147,7 +136,8 @@ function setStatus(text){
 function updateClockAndTriggers() {
   const { hhmmss, hhmm, ymd } = getWIBParts();
 
-  if (!elClock) elClock = document.getElementById('current-time'); // re-bind bila perlu
+  // selalu re-bind (aman di TV)
+  elClock = document.getElementById('current-time');
   if (elClock) elClock.textContent = hhmmss;
 
   // Indonesia Raya 09:59 (sekali per hari)
@@ -171,6 +161,16 @@ function updateClockAndTriggers() {
       }).catch(()=>{});
     }
   }
+}
+
+// ====== TICKER ANTI-DRIFT (1 pemilik jam) ======
+function startWIBClock() {
+  if (window.__WIB_TICKER__) clearTimeout(window.__WIB_TICKER__);
+  const tick = () => {
+    updateClockAndTriggers();
+    window.__WIB_TICKER__ = setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+  };
+  tick();
 }
 
 // ====== AUTOPLAY PRIMING & UNLOCK ======
@@ -205,7 +205,7 @@ async function playLagu(audioEl) {
     if (!soundUnlocked) await primeAutoplay();
     audioEl.loop = false; audioEl.muted = false; audioEl.currentTime = 0; audioEl.volume = 1;
     if (audioEl.paused) await audioEl.play();
-  } catch (e) { console.warn('Play blocked:', e); throw e; }
+  } catch (e) { console.warn('Play blocked:', e); /* diam */ }
 }
 
 // ====== WAKE LOCK (agar layar tidak sleep, jika didukung) ======
@@ -238,8 +238,8 @@ async function boot(){
   await requestWakeLock();
 
   // clock & triggers
-  updateClockAndTriggers(); // tampilkan segera
-  setInterval(updateClockAndTriggers, 1000);
+  updateClockAndTriggers();      // tampilkan segera
+  startWIBClock();               // ticker anti-drift (gantikan setInterval)
 
   // refresh jadwal & video tiap hari 00:10 WIB
   setInterval(async ()=>{
@@ -258,6 +258,3 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
-
-
-
