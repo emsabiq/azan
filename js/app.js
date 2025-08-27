@@ -15,36 +15,27 @@ document.addEventListener('DOMContentLoaded', () => {
   if (IS_TV) document.documentElement.classList.add('tv-mode');
 });
 
-// ===== DROP-IN REPLACEMENT (pasti WIB) =====
+// ===== WIB HELPERS =====
 function pad2(n){ return n < 10 ? '0'+n : ''+n; }
 function getWIBParts(now = new Date()){
-  // offset lokal (menit, timur-UTC = positif). Contoh: WIB = +420.
   const localOffsetMin = -now.getTimezoneOffset();
-  // selisih dari lokal → WIB
-  const deltaMin = 420 - localOffsetMin; // 420 = 7 jam
-  // geser epoch sebesar selisih, lalu ambil komponen DARI GETTER LOKAL (bukan UTC)
+  const deltaMin = 420 - localOffsetMin; // 420 = +7 jam
   const t = new Date(now.getTime() + deltaMin * 60000);
-
   const y  = t.getFullYear();
   const m  = pad2(t.getMonth()+1);
   const d  = pad2(t.getDate());
   const hh = pad2(t.getHours());
   const mm = pad2(t.getMinutes());
   const ss = pad2(t.getSeconds());
-  return {
-    y, m, d, hh, mm, ss,
-    hhmm: `${hh}:${mm}`,
-    hhmmss: `${hh}:${mm}:${ss}`,
-    ymd: `${y}-${m}-${d}`
-  };
+  return { y,m,d,hh,mm,ss, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}`, ymd:`${y}-${m}-${d}` };
 }
-
 
 // ====== STATUS ======
 let elStatus = null;
 function setStatus(text){
   if (!elStatus) elStatus = document.getElementById('status-pill');
   if (elStatus) elStatus.textContent = text;
+  console.log('[STATUS]', text);
 }
 
 // ====== VIDEO (aman untuk TV) ======
@@ -73,9 +64,8 @@ async function loadVideo() {
     if (ok) { setStatus('Video siap'); return; }
   }
   el.removeAttribute('src'); try { el.load?.(); } catch {}
-  setStatus('Video tidak didukung — hanya widget aktif');
+  setStatus('Video gagal — hanya widget');
 }
-
 function tryAttachVideo(el, src) {
   return new Promise((resolve) => {
     let done = false;
@@ -84,12 +74,8 @@ function tryAttachVideo(el, src) {
       el.removeEventListener('error', onError);
       clearTimeout(timer);
     };
-    const onLoaded = () => {
-      if (done) return; done = true; cleanup();
-      el.play().catch(()=>{});
-      resolve(true);
-    };
-    const onError = () => { if (done) return; done = true; cleanup(); resolve(false); };
+    const onLoaded = () => { if (done) return; done = true; cleanup(); el.play().catch(()=>{}); resolve(true); };
+    const onError  = () => { if (done) return; done = true; cleanup(); resolve(false); };
     const timer = setTimeout(() => { if (!done) { done = true; cleanup(); resolve(false); } }, 6000);
 
     el.src = `${src}?v=${Date.now()}`;
@@ -120,11 +106,11 @@ async function fetchJadwal() {
   const j = json?.data?.jadwal;
   if (!j) throw new Error('Respon MyQuran tidak berisi jadwal');
   jadwalSholat = {
-    subuh: j.subuh.slice(0, 5),
-    dzuhur: j.dzuhur.slice(0, 5),
-    ashar: j.ashar.slice(0, 5),
+    subuh:   j.subuh.slice(0, 5),
+    dzuhur:  j.dzuhur.slice(0, 5),
+    ashar:   j.ashar.slice(0, 5),
     maghrib: j.maghrib.slice(0, 5),
-    isya: j.isya.slice(0, 5)
+    isya:    j.isya.slice(0, 5)
   };
   ['subuh','dzuhur','ashar','maghrib','isya'].forEach(k=>{
     const el = document.getElementById(k); if (el) el.textContent = jadwalSholat[k];
@@ -142,7 +128,7 @@ function updateClockAndTriggers() {
 
   if (!elClock) elClock = document.getElementById('current-time');
   if (elClock && hhmmss !== lastClockText) {
-    elClock.textContent = hhmmss;   // render hanya jika berubah
+    elClock.textContent = hhmmss;
     lastClockText = hhmmss;
   }
 
@@ -169,53 +155,54 @@ function updateClockAndTriggers() {
   }
 }
 
-// ====== Tick per detik (SATU loop saja, ter-align ke detik) ======
+// ====== LOOP (ter-align detik) ======
 let tickTimer = null;
 function scheduleNextTick(){
-  clearTimeout(tickTimer); // cegah timer ganda
+  clearTimeout(tickTimer);
   const ms = 1000 - (Date.now() % 1000) + 5;
   tickTimer = setTimeout(() => {
     try { updateClockAndTriggers(); } finally { scheduleNextTick(); }
   }, ms);
 }
 
-// ====== AUDIO UNLOCK ======
-let soundUnlocked = false;
-async function primeAutoplay() {
-  try {
-    if (!adzanAudio) adzanAudio = document.getElementById('adzan-audio');
-    adzanAudio.loop = true;
-    adzanAudio.muted = true;
-    await adzanAudio.play();
-    soundUnlocked = true;
-    setStatus('Audio siap (primed)');
-    removeUnlockHandlers();
-  } catch {
-    setStatus('Aktifkan suara: sentuh/klik/OK');
-    addUnlockHandlers();
-  }
-}
-// Simpan handler supaya bisa di-remove
-function addUnlockHandlers() {
-  window.__unlockOnce = async () => { try { await primeAutoplay(); } finally { removeUnlockHandlers(); } };
-  window.addEventListener('pointerdown', window.__unlockOnce, { once:true });
-  window.addEventListener('touchstart', window.__unlockOnce, { once:true });
-  window.addEventListener('keydown', window.__unlockOnce, { once:true });
-}
-function removeUnlockHandlers() {
-  if (!window.__unlockOnce) return;
-  window.removeEventListener('pointerdown', window.__unlockOnce);
-  window.removeEventListener('touchstart', window.__unlockOnce);
-  window.removeEventListener('keydown', window.__unlockOnce);
-  window.__unlockOnce = null;
-}
+// ====== AUDIO: direct play + remote unlock ======
 async function playLagu(audioEl) {
   try {
-    if (!soundUnlocked) await primeAutoplay();
-    audioEl.loop = false; audioEl.muted = false; audioEl.currentTime = 0; audioEl.volume = 1;
-    if (audioEl.paused) await audioEl.play();
-  } catch {}
+    audioEl.load?.();                  // beberapa TV perlu eksplisit load
+    audioEl.loop = false;
+    audioEl.muted = false;
+    audioEl.currentTime = 0;
+    audioEl.volume = 1;
+    await audioEl.play();              // langsung play (tanpa guard)
+    console.log('▶️ Play:', audioEl.id);
+  } catch (e) {
+    console.warn('⚠️ Autoplay gagal:', e);
+    setStatus('Perlu tekan OK pada remote untuk aktifkan suara');
+  }
 }
+
+// Unlock sekali (tidak memutar adzan spontan): prime sebentar dalam kondisi muted
+function unlockOnce(){
+  const ids = ['adzan-audio', 'indonesia-raya'];
+  ids.forEach(id=>{
+    const a = document.getElementById(id);
+    if (!a) return;
+    try {
+      a.load?.();
+      a.muted = true;
+      a.play().then(()=>{
+        setTimeout(()=>{
+          try { a.pause(); a.currentTime = 0; a.muted = false; } catch {}
+        }, 120); // cukup untuk “unlock” policy, tanpa bunyi
+      }).catch(()=>{});
+    } catch {}
+  });
+  setStatus('Audio siap (unlock via remote)');
+}
+// tangkap berbagai jenis input remote (sekali saja)
+['keydown','keyup','click','pointerup'].forEach(ev=>{
+  document.addEventListener(ev, unlockOnce, { once: true, passive: true });
+});
 
 // ====== WAKE LOCK ======
 let wakeLock = null;
@@ -226,7 +213,7 @@ async function requestWakeLock(){
       wakeLock.addEventListener('release', () => setStatus('Wake Lock lepas'));
       setStatus('Wake Lock aktif');
     }
-  } catch(e){}
+  } catch {}
 }
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
@@ -235,10 +222,10 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ====== BOOT (guard agar tidak dobel) ======
+// ====== BOOT ======
 let __BOOTED__ = false;
 async function boot(){
-  if (__BOOTED__) return;     // cegah boot ganda
+  if (__BOOTED__) return;
   __BOOTED__ = true;
 
   elStatus   = document.getElementById('status-pill');
@@ -249,11 +236,10 @@ async function boot(){
   setStatus('Init…');
   await loadVideo();
   await fetchJadwal();
-  await primeAutoplay();
   await requestWakeLock();
 
-  updateClockAndTriggers(); // tampilkan segera
-  scheduleNextTick();       // <<< SATU loop saja
+  updateClockAndTriggers();
+  scheduleNextTick();
 
   // refresh hari baru 00:10 WIB
   setInterval(async ()=>{
@@ -264,7 +250,12 @@ async function boot(){
       location.reload();
     }
   }, 30000);
+
+  // --- OPSIONAL: tes cepat di TV ---
+  const qp = new URLSearchParams(location.search);
+  if (qp.get('test') === 'adzan5') {
+    setStatus('Mode uji: Adzan 5 detik');
+    setTimeout(()=>{ try{ playLagu(document.getElementById('adzan-audio')); }catch{} }, 5000);
+  }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-
-
