@@ -15,20 +15,37 @@ document.addEventListener('DOMContentLoaded', () => {
   if (IS_TV) document.documentElement.classList.add('tv-mode');
 });
 
-// ====== UTIL WAKTU WIB (manual UTC+7, kebal zona perangkat) ======
+// ===== REPLACE: fungsi WIB agar TIDAK jadi UTC 06:29 =====
 function pad2(n){ return n < 10 ? '0'+n : ''+n; }
-/** WIB(ms) = now + (getTimezoneOffset() + 420)*60000 */
 function getWIBParts(now = new Date()){
-  const wibMs = now.getTime() + (now.getTimezoneOffset() + 420) * 60000;
-  const w = new Date(wibMs);
-  const y  = w.getUTCFullYear();
-  const m  = pad2(w.getUTCMonth()+1);
-  const d  = pad2(w.getUTCDate());
-  const hh = pad2(w.getUTCHours());
-  const mm = pad2(w.getUTCMinutes());
-  const ss = pad2(w.getUTCSeconds());
-  return { y, m, d, hh, mm, ss, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}`, ymd:`${y}-${m}-${d}` };
+  // 1) Coba cara paling akurat: Intl dengan timeZone Asia/Jakarta
+  try{
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jakarta',
+      hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    }).formatToParts(now);
+
+    const pick = t => (parts.find(p => p.type === t) || {}).value || '00';
+    const y = pick('year'), m = pick('month'), d = pick('day');
+    const hh = pick('hour'), mm = pick('minute'), ss = pick('second');
+
+    return { y, m, d, hh, mm, ss, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}`, ymd:`${y}-${m}-${d}` };
+  }catch(e){
+    // 2) Fallback universal: tambah 7 jam lalu baca sebagai UTC
+    const wibMs = now.getTime() + 420 * 60000; // +7 jam
+    const w = new Date(wibMs);
+    const y  = w.getUTCFullYear();
+    const m  = pad2(w.getUTCMonth()+1);
+    const d  = pad2(w.getUTCDate());
+    const hh = pad2(w.getUTCHours());
+    const mm = pad2(w.getUTCMinutes());
+    const ss = pad2(w.getUTCSeconds());
+    return { y, m, d, hh, mm, ss, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}`, ymd:`${y}-${m}-${d}` };
+  }
 }
+
 
 // ====== STATUS ======
 let elStatus = null;
@@ -256,3 +273,4 @@ async function boot(){
   }, 30000);
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+
