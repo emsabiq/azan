@@ -6,14 +6,15 @@
   <title>Signage Adzan + Video (Medan)</title>
 
   <!-- CSS utama (RELATIF, TANPA <base>) -->
-  <link rel="stylesheet" href="css/index-style.css?v=3" />
+  <link rel="stylesheet" href="css/index-style.css?v=4" />
 
   <!-- Fallback CSS super-minimal bila file di atas gagal dimuat -->
   <style>
     #bg-video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
     .widget-strip{
       position:fixed;left:50%;transform:translateX(-50%);bottom:0;
-      width:clamp(260px,96vw,880px);padding:6px 10px; padding-bottom:calc(6px + env(safe-area-inset-bottom));
+      width:clamp(260px,96vw,880px);padding:6px 10px;
+      padding-bottom:calc(6px + env(safe-area-inset-bottom));
       border-radius:12px 12px 0 0;
       background:rgba(15,27,24,.45);color:#fff;display:flex;gap:8px;align-items:center;justify-content:space-between;
       z-index:9999;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif
@@ -59,6 +60,6 @@
   </audio>
 
   <!-- JS utama (RELATIF) -->
-  <script src="js/app.js?v=4" defer></script>
+  <script src="js/app.js?v=5" defer></script>
 </body>
 </html>
