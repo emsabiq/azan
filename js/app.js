@@ -4,231 +4,318 @@ const KOTA_CACHE_KEY = 'myq_kota_medan_id';
 const LAST_INDONESIA_KEY = 'lastPlayedIndonesia';
 const LAST_ADZAN_KEY = 'lastPlayedAdzanKey';
 
-// Deteksi TV (opsional)
+// ====== DETEKSI TV / FALLBACK CSS ======
 const IS_TV = /Tizen|Web0S|WebOS|SmartTV|Hisense|AOSP|Android TV/i.test(navigator.userAgent)
            || new URLSearchParams(location.search).has('tv');
 
 document.addEventListener('DOMContentLoaded', () => {
-  const okBlur = (window.CSS&&CSS.supports)&& (CSS.supports('backdrop-filter','blur(4px)')||CSS.supports('-webkit-backdrop-filter','blur(4px)'));
-  if (!okBlur) document.documentElement.classList.add('no-bdf');
+  const lackBackdrop = !(window.CSS && CSS.supports &&
+    (CSS.supports('backdrop-filter','blur(4px)') || CSS.supports('-webkit-backdrop-filter','blur(4px)')));
+  if (lackBackdrop) document.documentElement.classList.add('no-bdf');
   if (IS_TV) document.documentElement.classList.add('tv-mode');
 });
 
-// ====== WIB helper (tanpa Intl, aman di TV) ======
-function pad2(n){ return n<10 ? '0'+n : ''+n; }
-function getWIBParts(now=new Date()){
-  // Cara paling aman: konversi ke UTC lalu tambah +7 jam (WIB).
-  const utcMs = now.getTime() + now.getTimezoneOffset()*60000; // UTC ms
-  const wib = new Date(utcMs + 7*3600*1000);                   // UTC+7
-  const y  = wib.getUTCFullYear();
-  const m  = pad2(wib.getUTCMonth()+1);
-  const d  = pad2(wib.getUTCDate());
-  const hh = pad2(wib.getUTCHours());
-  const mm = pad2(wib.getUTCMinutes());
-  const ss = pad2(wib.getUTCSeconds());
-  return { y,m,d, hh,mm,ss, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}`, ymd:`${y}-${m}-${d}` };
+// ====== UTIL WAKTU WIB (tanpa Intl, aman di TV) ======
+function pad2(n){ return n < 10 ? '0'+n : ''+n; }
+// ✅ Rumus benar: konversi dari lokal → WIB (UTC+7) tanpa “double-correct”
+function getWIBParts(now = new Date()){
+  // getTimezoneOffset() = menit yang perlu DITAMBAH ke waktu lokal untuk menjadi UTC
+  // Waktu di zona target (WIB) = waktu lokal + (offset_lokal - offset_WIB)
+  const hereOffset = now.getTimezoneOffset(); // menit
+  const WIB_OFFSET = -420;                    // UTC+7 → -420 menit
+  const w = new Date(now.getTime() + (hereOffset - WIB_OFFSET) * 60 * 1000);
+
+  // Ambil komponen dengan UTC-getters (karena kita sudah geser epoch ke WIB)
+  const y  = w.getUTCFullYear();
+  const m  = pad2(w.getUTCMonth()+1);
+  const d  = pad2(w.getUTCDate());
+  const hh = pad2(w.getUTCHours());
+  const mm = pad2(w.getUTCMinutes());
+  const ss = pad2(w.getUTCSeconds());
+  return { y, m, d, hh, mm, ss, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}`, ymd:`${y}-${m}-${d}` };
 }
 
 // ====== STATUS ======
-function setStatus(t){ const el=document.getElementById('status-pill'); if(el) el.textContent=t; }
-
-// ====== VIDEO LOADER (Tizen-safe) ======
-function ensurePiPOff(v){
-  try{
-    v.disablePictureInPicture = true; v.setAttribute('disablepictureinpicture','');
-    v.disableRemotePlayback = true;   v.setAttribute('controlslist','nodownload noplaybackrate noremoteplayback');
-  }catch{}
+let elStatus = null;
+function setStatus(text){
+  if (!elStatus) elStatus = document.getElementById('status-pill');
+  if (elStatus) elStatus.textContent = text;
 }
-async function loadVideo(){
-  const v = document.getElementById('bg-video'); if(!v) return;
-  v.autoplay=true; v.muted=true; v.loop=true; v.playsInline=true; v.setAttribute('playsinline',''); v.preload='auto';
-  ensurePiPOff(v);
+
+// ====== VIDEO LOADER (Tizen-safe + PiP off) ======
+function ensurePiPOff(video){
+  try {
+    video.disablePictureInPicture = true;
+    video.setAttribute('disablepictureinpicture','');
+    video.disableRemotePlayback = true;
+    video.setAttribute('controlslist','nodownload noplaybackrate noremoteplayback');
+  } catch {}
+}
+
+async function loadVideo() {
+  const video = document.getElementById('bg-video');
+  if (!video) return;
+
+  // Set flags autoplay di HTML sudah ada, set juga via JS (cadangan)
+  video.autoplay = true; video.muted = true; video.loop = true;
+  video.playsInline = true; video.setAttribute('playsinline',''); video.preload = 'auto';
+  ensurePiPOff(video);
 
   const { ymd } = getWIBParts();
-  const sources = [
+  const candidates = [
     `${VIDEO_BASE}/${ymd}.mp4`,
     `${VIDEO_BASE}/latest.mp4`,
-    `${VIDEO_BASE}/default.mp4`,
+    `${VIDEO_BASE}/default.mp4`
   ];
-  for (const src of sources){
-    const ok = await attachAndTryPlay(v, src);
-    if (ok){
+
+  for (const src of candidates) {
+    const ok = await attachSourceAndPlay(video, src);
+    if (ok) {
       setStatus('Video siap');
-      // keep-alive (beberapa TV suka pause sendiri)
-      setInterval(()=>{ if (v.paused && v.readyState>=2) v.play().catch(()=>{}); }, 15000);
+      video.style.display = 'block';
+      // Keep-alive: beberapa TV suka pause sendiri
+      setInterval(()=>{ if (video.paused && video.readyState >= 2) video.play().catch(()=>{}); }, 15000);
       return;
     }
   }
-  // Gagal semua → sembunyikan source agar tidak layar hitam
-  try{ v.pause(); }catch{}
-  while(v.firstChild) v.removeChild(v.firstChild);
-  try{ v.load?.(); }catch{}
+
+  // Semua gagal → sembunyikan agar tidak layar hitam
+  safeHideVideo(video);
   setStatus('Video gagal dimuat — hanya widget aktif');
 }
-function attachAndTryPlay(v, src){
-  return new Promise((resolve)=>{
-    while(v.firstChild) v.removeChild(v.firstChild);
 
-    // Deklarasi codec eksplisit (Tizen picky)
-    const s1=document.createElement('source'); s1.src=src; s1.type='video/mp4; codecs="avc1.4D401E, mp4a.40.2"';
-    const s2=document.createElement('source'); s2.src=src; s2.type='video/mp4; codecs="avc1.42E01E, mp4a.40.2"';
-    v.appendChild(s1); v.appendChild(s2);
+function attachSourceAndPlay(video, src){
+  return new Promise((resolve) => {
+    // Bersihkan source lama
+    while (video.firstChild) video.removeChild(video.firstChild);
 
-    let done=false;
-    const finish=ok=>{ if(done) return; done=true; cleanup(); resolve(ok); };
-    const cleanup=()=>{ ['loadeddata','canplay','playing','error'].forEach(ev=>v.removeEventListener(ev,handlers[ev])); clearTimeout(to); };
+    // Buat 2 source dengan deklarasi codec (Tizen picky)
+    const s1 = document.createElement('source');
+    s1.src = src; // TANPA query string
+    s1.type = 'video/mp4; codecs="avc1.4D401E, mp4a.40.2"'; // H.264 Main + AAC-LC
 
-    const handlers={
-      loadeddata: ()=>finish(true),
-      canplay: ()=>{ v.play().catch(()=>{}); },
-      playing: ()=>finish(true),
-      error: ()=>finish(false)
+    const s2 = document.createElement('source');
+    s2.src = src;
+    s2.type = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'; // H.264 Baseline + AAC-LC
+
+    video.appendChild(s1); video.appendChild(s2);
+
+    let done = false;
+    const finish = ok => { if (done) return; done = true; cleanup(); resolve(ok); };
+    const cleanup = () => {
+      ['loadeddata','canplay','playing','error'].forEach(ev => video.removeEventListener(ev, handlers[ev]));
+      clearTimeout(timer);
     };
-    const to=setTimeout(()=>finish(false), IS_TV?20000:10000);
-    Object.keys(handlers).forEach(ev=>v.addEventListener(ev,handlers[ev],{once:true}));
 
-    try{ v.load(); }catch{}
-    v.play().catch(()=>{});
-    // Tombol manual (OK/Enter) jika autoplay ditolak
-    setTimeout(()=>{ if(v.paused) showManualStart(v); }, 2500);
+    const handlers = {
+      loadeddata: () => finish(true),
+      canplay:    () => { video.play().catch(()=>{}); },
+      playing:    () => finish(true),
+      error:      () => finish(false)
+    };
+
+    const timer = setTimeout(() => finish(false), IS_TV ? 20000 : 10000);
+    Object.keys(handlers).forEach(ev => video.addEventListener(ev, handlers[ev], { once:true }));
+
+    try { video.load(); } catch {}
+    video.play().catch(()=>{});
+    // Tombol manual (OK/Enter) bila autoplay ditolak
+    setTimeout(() => { if (video.paused) showManualStart(video); }, 2500);
   });
 }
-function showManualStart(v){
+
+function showManualStart(video){
   if (document.getElementById('start-video-btn')) return;
-  const b=document.createElement('button');
-  b.id='start-video-btn'; b.textContent='Mulai Video';
-  Object.assign(b.style,{position:'fixed',left:'50%',top:'50%',transform:'translate(-50%,-50%)',zIndex:10000,
-    padding:'10px 16px',borderRadius:'10px',background:'rgba(20,52,46,.85)',color:'#fff',
-    border:'1px solid rgba(255,255,255,.2)',fontWeight:700,cursor:'pointer'});
-  b.onclick=()=>{ v.play().then(()=>b.remove()).catch(()=>{}); };
-  document.body.appendChild(b);
-  const onKey=(e)=>{ if(e.key==='Enter'||e.keyCode===13){ v.play().then(()=>{try{b.remove();}catch{};window.removeEventListener('keydown',onKey);}).catch(()=>{}); } };
-  window.addEventListener('keydown',onKey);
+  const btn = document.createElement('button');
+  btn.id = 'start-video-btn';
+  btn.textContent = 'Mulai Video';
+  Object.assign(btn.style, {
+    position:'fixed', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+    zIndex: 10000, padding:'10px 16px', borderRadius:'10px',
+    background:'rgba(20,52,46,.85)', color:'#fff', border:'1px solid rgba(255,255,255,.2)',
+    fontWeight:'700', cursor:'pointer'
+  });
+  btn.onclick = () => { video.play().then(()=>btn.remove()).catch(()=>{}); };
+  document.body.appendChild(btn);
+
+  // Remote TV (OK/Enter)
+  const onKey = (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      video.play().then(()=>{ try{btn.remove();}catch{}; window.removeEventListener('keydown', onKey); }).catch(()=>{});
+    }
+  };
+  window.addEventListener('keydown', onKey);
 }
 
-// ====== JADWAL (MyQuran v2) ======
-let jadwalSholat={};
-async function resolveMedanId(){
-  const c=localStorage.getItem(KOTA_CACHE_KEY); if(c) return c;
-  const r=await fetch('https://api.myquran.com/v2/sholat/kota/semua'); const j=await r.json();
-  const list=j?.data||[]; const kota=list.find(k=>/^kota\s*medan$/i.test(k.lokasi))||list.find(k=>/^medan$/i.test(k.lokasi));
-  if(!kota) throw new Error('Kota Medan tidak ditemukan');
-  localStorage.setItem(KOTA_CACHE_KEY,kota.id); return kota.id;
+function safeHideVideo(video){
+  try { video.pause(); } catch {}
+  while (video.firstChild) video.removeChild(video.firstChild);
+  try { video.load?.(); } catch {}
+  video.style.display = 'none';
 }
-async function fetchJadwal(){
-  const {y,m,d}=getWIBParts(); const id=await resolveMedanId();
-  const url=`https://api.myquran.com/v2/sholat/jadwal/${id}/${y}/${+m}/${+d}`;
-  const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status);
-  const j=await r.json(); const jj=j?.data?.jadwal; if(!jj) throw new Error('Respon kosong');
-  jadwalSholat={
-    subuh: jj.subuh.slice(0,5), dzuhur: jj.dzuhur.slice(0,5), ashar: jj.ashar.slice(0,5),
-    maghrib: jj.maghrib.slice(0,5), isya: jj.isya.slice(0,5),
+
+// ====== MYQURAN v2 ======
+let jadwalSholat = {};
+async function resolveMedanId() {
+  const cached = localStorage.getItem(KOTA_CACHE_KEY);
+  if (cached) return cached;
+  const res = await fetch('https://api.myquran.com/v2/sholat/kota/semua');
+  const json = await res.json();
+  const list = json?.data || [];
+  const kota = list.find(k => /^kota\s*medan$/i.test(k.lokasi)) || list.find(k => /^medan$/i.test(k.lokasi));
+  if (!kota) throw new Error('Kota Medan tidak ditemukan di MyQuran');
+  localStorage.setItem(KOTA_CACHE_KEY, kota.id);
+  return kota.id;
+}
+async function fetchJadwal() {
+  const { y, m, d } = getWIBParts();
+  const id = await resolveMedanId();
+  const url = `https://api.myquran.com/v2/sholat/jadwal/${id}/${y}/${+m}/${+d}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  const j = json?.data?.jadwal;
+  if (!j) throw new Error('Respon MyQuran tidak berisi jadwal');
+
+  jadwalSholat = {
+    subuh: j.subuh.slice(0, 5),
+    dzuhur: j.dzuhur.slice(0, 5),
+    ashar: j.ashar.slice(0, 5),
+    maghrib: j.maghrib.slice(0, 5),
+    isya: j.isya.slice(0, 5)
   };
+  // tampilkan di widget
   ['subuh','dzuhur','ashar','maghrib','isya'].forEach(k=>{
-    const el=document.getElementById(k); if(el) el.textContent=jadwalSholat[k];
+    const el = document.getElementById(k); if (el) el.textContent = jadwalSholat[k];
   });
   setStatus('Jadwal dimuat');
 }
-async function fetchJadwalWithRetry(n=0){
-  try{ await fetchJadwal(); }
-  catch(e){ setStatus('Jadwal gagal, mencoba ulang…'); if(n<3) setTimeout(()=>fetchJadwalWithRetry(n+1),(n+1)*5000); }
-}
-
-// ====== CLOCK + TRIGGER AUDIO ======
-let lastPlayedAdzanKey = localStorage.getItem(LAST_ADZAN_KEY)||'';
-let adzanAudio=null, indoAudio=null;
-
-async function primeAutoplay(){
-  try{
-    if(!adzanAudio) adzanAudio=document.getElementById('adzan-audio');
-    adzanAudio.loop=true; adzanAudio.muted=true;
-    await adzanAudio.play();
-    setStatus('Audio siap (primed)');
-    window.removeEventListener('pointerdown',primeAutoplay);
-    window.removeEventListener('touchstart',primeAutoplay);
-    window.removeEventListener('keydown',primeAutoplay);
-  }catch{
-    setStatus('Aktifkan suara: sentuh/klik/OK');
-    window.addEventListener('pointerdown',primeAutoplay,{once:true});
-    window.addEventListener('touchstart',primeAutoplay,{once:true});
-    window.addEventListener('keydown',primeAutoplay,{once:true});
+async function fetchJadwalWithRetry(tries=0){
+  try { await fetchJadwal(); }
+  catch(e){
+    setStatus('Jadwal gagal, mencoba ulang…');
+    if (tries < 3) setTimeout(()=>fetchJadwalWithRetry(tries+1), (tries+1)*5000);
   }
 }
-async function playLagu(el){
-  try{
-    if(!el) return;
-    await primeAutoplay();        // pastikan unlocked
-    el.loop=false; el.muted=false; el.currentTime=0; el.volume=1;
-    if(el.paused) await el.play();
-  }catch{}
-}
 
-function updateClockAndTriggers(){
-  const {hhmmss, hhmm, ymd}=getWIBParts();
+// ====== CLOCK + PEMICU AUDIO ======
+let elClock, adzanAudio, indoAudio;
+let lastPlayedAdzanKey = localStorage.getItem(LAST_ADZAN_KEY) || '';
 
-  // Re-bind tiap tick (jangan cache)
-  const clk=document.getElementById('current-time');
-  if(clk) clk.textContent=hhmmss;
+function updateClockAndTriggers() {
+  const { hhmmss, hhmm, ymd } = getWIBParts();
 
-  // Pastikan elemen audio ada
-  if(!adzanAudio) adzanAudio=document.getElementById('adzan-audio');
-  if(!indoAudio)  indoAudio =document.getElementById('indonesia-raya');
+  // selalu re-bind (jangan cache) biar aman di TV
+  elClock = document.getElementById('current-time');
+  if (elClock) elClock.textContent = hhmmss;
 
   // Indonesia Raya 09:59 (sekali per hari)
-  const lastIndo=localStorage.getItem(LAST_INDONESIA_KEY);
-  if(hhmm==='09:59' && lastIndo!==ymd){
-    playLagu(indoAudio).then(()=>{ localStorage.setItem(LAST_INDONESIA_KEY,ymd); setStatus('Indonesia Raya 09:59'); }).catch(()=>{});
+  const lastIndo = localStorage.getItem(LAST_INDONESIA_KEY);
+  if (hhmm === '09:59' && lastIndo !== ymd) {
+    if (!indoAudio) indoAudio = document.getElementById('indonesia-raya');
+    playLagu(indoAudio).then(()=>{
+      localStorage.setItem(LAST_INDONESIA_KEY, ymd);
+      setStatus('Indonesia Raya 09:59');
+    }).catch(()=>{ /* diam */ });
   }
 
   // Adzan
-  for(const key in jadwalSholat){
-    if(jadwalSholat[key]===hhmm && lastPlayedAdzanKey!==`${ymd}_${key}`){
+  for (const key in jadwalSholat) {
+    if (jadwalSholat[key] === hhmm && lastPlayedAdzanKey !== `${ymd}_${key}`) {
+      if (!adzanAudio) adzanAudio = document.getElementById('adzan-audio');
       playLagu(adzanAudio).then(()=>{
-        lastPlayedAdzanKey=`${ymd}_${key}`;
-        localStorage.setItem(LAST_ADZAN_KEY,lastPlayedAdzanKey);
+        lastPlayedAdzanKey = `${ymd}_${key}`;
+        localStorage.setItem(LAST_ADZAN_KEY, lastPlayedAdzanKey);
         setStatus(`Adzan ${key} ${hhmm}`);
-      }).catch(()=>{});
+      }).catch(()=>{ /* diam */ });
     }
   }
 }
 
-// Loop jam anti-drift (lebih stabil di TV dibanding setInterval)
-(function startClock(){
-  function tick(){
+// Tick per detik dgn koreksi drift
+let tickTimer = null;
+function scheduleNextTick(){
+  const ms = 1000 - (Date.now() % 1000) + 5;
+  tickTimer = setTimeout(() => {
     updateClockAndTriggers();
-    setTimeout(tick, 1000 - (Date.now()%1000) + 5);
+    scheduleNextTick();
+  }, ms);
+}
+
+// ====== AUDIO UNLOCK ======
+let soundUnlocked = false;
+async function primeAutoplay() {
+  try {
+    if (!adzanAudio) adzanAudio = document.getElementById('adzan-audio');
+    adzanAudio.loop = true;
+    adzanAudio.muted = true;
+    await adzanAudio.play();
+    soundUnlocked = true;
+    setStatus('Audio siap (primed)');
+    removeUnlockHandlers();
+  } catch (e) {
+    setStatus('Aktifkan suara: sentuh/klik/OK');
+    addUnlockHandlers();
   }
-  tick();
-})();
+}
+function addUnlockHandlers() {
+  const once = async () => { try { await primeAutoplay(); } finally { removeUnlockHandlers(); } };
+  window.addEventListener('pointerdown', once, { once:true });
+  window.addEventListener('touchstart', once, { once:true });
+  window.addEventListener('keydown', once, { once:true }); // remote OK/Enter
+}
+function removeUnlockHandlers() {
+  window.onpointerdown = window.ontouchstart = window.onkeydown = null;
+}
+async function playLagu(audioEl) {
+  try {
+    if (!soundUnlocked) await primeAutoplay();
+    audioEl.loop = false; audioEl.muted = false; audioEl.currentTime = 0; audioEl.volume = 1;
+    if (audioEl.paused) await audioEl.play();
+  } catch (e) { /* diam */ }
+}
 
 // ====== WAKE LOCK ======
+let wakeLock = null;
 async function requestWakeLock(){
-  try{
-    if('wakeLock' in navigator){
-      const wl=await navigator.wakeLock.request('screen');
-      wl.addEventListener('release',()=>setStatus('Wake Lock lepas'));
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => setStatus('Wake Lock lepas'));
       setStatus('Wake Lock aktif');
     }
-  }catch{}
+  } catch(e){ /* diam */ }
 }
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ requestWakeLock(); updateClockAndTriggers(); } });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { requestWakeLock(); updateClockAndTriggers(); }
+});
 
 // ====== BOOT ======
 async function boot(){
+  // Bind DOM awal
+  elStatus   = document.getElementById('status-pill');
+  elClock    = document.getElementById('current-time');
+  adzanAudio = document.getElementById('adzan-audio');
+  indoAudio  = document.getElementById('indonesia-raya');
+
   setStatus('Init…');
   await loadVideo();
   await fetchJadwalWithRetry();
   await primeAutoplay();
   await requestWakeLock();
 
-  // Refresh 00:10 WIB (jadwal & video) — signage aman
+  // clock & triggers (WIB)
+  updateClockAndTriggers();
+  scheduleNextTick();
+
+  // refresh 00:10 WIB untuk hari baru (jadwal & video)
   setInterval(async ()=>{
-    const {hh,mm}=getWIBParts();
-    if(hh==='00' && mm==='10'){
+    const { hh, mm } = getWIBParts();
+    if (hh === '00' && mm === '10') {
       await fetchJadwalWithRetry();
       await loadVideo();
-      location.reload();
+      location.reload(); // signage-safe
     }
   }, 30000);
 }
-if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
