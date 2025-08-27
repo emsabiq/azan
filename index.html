@@ -5,23 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Signage Adzan + Video (Medan)</title>
 
-  <!-- UBAH jika deploy di subfolder, mis. /azan/ -->
-  <base href="/" />
+  <!-- CSS utama (RELATIF, TANPA <base>) -->
+  <link rel="stylesheet" href="css/index-style.css?v=3" />
 
-  <!-- CSS utama -->
-  <link rel="stylesheet" href="/css/index-style.css?v=3" />
-
-  <!-- CSS fallback minimal (tetap center jika CSS eksternal gagal) -->
+  <!-- Fallback CSS super-minimal bila file di atas gagal dimuat -->
   <style>
     #bg-video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
     .widget-strip{
-      position:fixed;bottom:0;left:50%;transform:translateX(-50%);
-      width:90vw;max-width:860px;padding:6px 10px;border-radius:12px 12px 0 0;
-      background:rgba(0,0,0,.40);color:#fff;display:flex;gap:8px;align-items:center;
-      justify-content:space-between;z-index:9999;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif
+      position:fixed;left:50%;transform:translateX(-50%);bottom:0;
+      width:clamp(260px,96vw,880px);padding:6px 10px;border-radius:12px 12px 0 0;
+      background:rgba(15,27,24,.45);color:#fff;display:flex;gap:8px;align-items:center;justify-content:space-between;
+      z-index:9999;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif
     }
     .widget-strip .mid span{margin:0 6px}
     .dot{width:6px;height:6px;border-radius:50%;background:#66d1bf;display:inline-block}
+    .right{background:rgba(20,52,46,.35);padding:4px 8px;border-radius:999px;font-size:12px}
   </style>
 </head>
 <body>
@@ -53,15 +51,13 @@
 
   <!-- Audio -->
   <audio id="adzan-audio" preload="auto">
-    <source src="/assets/adzan.mp3" type="audio/mpeg" />
+    <source src="assets/adzan.mp3" type="audio/mpeg" />
   </audio>
   <audio id="indonesia-raya" preload="auto">
-    <source src="/assets/indonesia-raya.mp3" type="audio/mpeg" />
+    <source src="assets/indonesia-raya.mp3" type="audio/mpeg" />
   </audio>
 
-  <!-- JS utama (BUST CACHE!) -->
-  <script src="/js/app.js?v=10" defer></script>
-
-  <noscript>Aktifkan JavaScript untuk menampilkan jam, jadwal, dan pemutar video.</noscript>
+  <!-- JS utama (RELATIF, pakai versi terbaru app.js kamu) -->
+  <script src="js/app.js?v=3" defer></script>
 </body>
 </html>
