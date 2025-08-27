@@ -4,7 +4,7 @@ const KOTA_CACHE_KEY = 'myq_kota_medan_id';
 const LAST_INDONESIA_KEY = 'lastPlayedIndonesia';
 const LAST_ADZAN_KEY = 'lastPlayedAdzanKey';
 
-// ====== FEATURE/FALLBACK UNTUK TV LAWAS ======
+// ====== DETEKSI TV / FALLBACK CSS ======
 document.addEventListener('DOMContentLoaded', () => {
   const lackBackdrop = !(window.CSS && CSS.supports &&
     (CSS.supports('backdrop-filter','blur(4px)') || CSS.supports('-webkit-backdrop-filter','blur(4px)')));
@@ -18,19 +18,25 @@ document.addEventListener('DOMContentLoaded', () => {
 // ====== UTIL WAKTU WIB (tanpa Intl, aman di TV) ======
 function pad2(n){ return n < 10 ? '0'+n : ''+n; }
 function getWIBParts(now = new Date()){
-  // WIB = UTC+7 → hitung manual biar kompatibel TV lawas
+  // WIB = UTC+7 (tidak tergantung zona waktu perangkat)
   const utcMs = now.getTime() + now.getTimezoneOffset()*60000;
-  const wib = new Date(utcMs + 7*3600*1000);
-  const y  = wib.getUTCFullYear();
-  const m  = pad2(wib.getUTCMonth()+1);
-  const d  = pad2(wib.getUTCDate());
-  const hh = pad2(wib.getUTCHours());
-  const mm = pad2(wib.getUTCMinutes());
-  const ss = pad2(wib.getUTCSeconds());
-  return { y, m, d, hh, mm, ss, hhmm: `${hh}:${mm}`, hhmmss: `${hh}:${mm}:${ss}`, ymd: `${y}-${m}-${d}` };
+  const w = new Date(utcMs + 7*3600*1000);
+  const y  = w.getUTCFullYear();
+  const m  = pad2(w.getUTCMonth()+1);
+  const d  = pad2(w.getUTCDate());
+  const hh = pad2(w.getUTCHours());
+  const mm = pad2(w.getUTCMinutes());
+  const ss = pad2(w.getUTCSeconds());
+  return { y, m, d, hh, mm, ss,
+           hhmm: `${hh}:${mm}`,
+           hhmmss: `${hh}:${mm}:${ss}`,
+           ymd: `${y}-${m}-${d}` };
 }
 
-// ====== VIDEO LOADER (TV-SAFE, tanpa HEAD) ======
+// ====== VIDEO LOADER (TV-safe: no HEAD, no querystring) ======
+const IS_TV = /Tizen|Web0S|WebOS|SmartTV|Hisense|AOSP|Android TV/i.test(navigator.userAgent)
+            || new URLSearchParams(location.search).has('tv');
+
 async function loadVideo() {
   const el = document.getElementById('bg-video');
   if (!el) return;
@@ -42,9 +48,23 @@ async function loadVideo() {
     `${VIDEO_BASE}/default.mp4`
   ];
 
+  // Set autoplay props **sebelum** src (penting di TV)
+  el.autoplay = true;
+  el.muted = true;
+  el.loop = true;
+  el.playsInline = true;
+  el.setAttribute('playsinline', '');
+  el.preload = 'auto';
+
   for (const src of candidates) {
     const ok = await tryAttachVideo(el, src);
-    if (ok) { setStatus('Video siap'); return; }
+    if (ok) {
+      setStatus('Video siap');
+      el.style.display = 'block';
+      // keep-alive: beberapa TV pause sendiri
+      setInterval(() => { if (el.src && el.paused) el.play().catch(()=>{}); }, 15000);
+      return;
+    }
   }
 
   // Semua gagal → sembunyikan video agar tidak “layar hitam”
@@ -55,27 +75,36 @@ async function loadVideo() {
 function tryAttachVideo(el, src) {
   return new Promise((resolve) => {
     let done = false;
+    const finish = ok => { if (done) return; done = true; cleanup(); resolve(ok); };
     const cleanup = () => {
-      el.removeEventListener('loadedmetadata', onLoaded);
-      el.removeEventListener('error', onError);
+      ['loadedmetadata','loadeddata','canplay','playing','error','stalled','suspend','emptied']
+        .forEach(ev => el.removeEventListener(ev, handlers[ev]));
       if (timer) clearTimeout(timer);
     };
-    const onLoaded = () => {
-      if (done) return; done = true; cleanup();
-      el.autoplay = true; el.muted = true; el.loop = true; el.playsInline = true;
-      el.play().catch(()=>{});
-      resolve(true);
+    const handlers = {
+      loadedmetadata: () => { el.play().catch(()=>{}); },
+      loadeddata:     () => finish(true),
+      canplay:        () => finish(true),
+      playing:        () => finish(true),
+      stalled:        () => {},           // biarkan timeout yang memutuskan
+      suspend:        () => {},
+      emptied:        () => {},
+      error:          () => finish(false)
     };
-    const onError = () => { if (done) return; done = true; cleanup(); resolve(false); };
+    const timer = setTimeout(() => finish(false), IS_TV ? 18000 : 9000);
 
-    const timer = setTimeout(() => { if (!done) { done = true; cleanup(); resolve(false); } }, 6000);
+    Object.keys(handlers).forEach(ev => el.addEventListener(ev, handlers[ev], { once: ev!=='stalled' && ev!=='suspend' }));
 
+    // Pasang sumber TANPA query string
     el.style.display = 'block';
-    el.src = `${src}?v=${Date.now()}`;  // cache-bust
-    el.addEventListener('loadedmetadata', onLoaded, { once:true });
-    el.addEventListener('error', onError, { once:true });
+    try { el.pause(); } catch {}
+    el.removeAttribute('src');
+    try { el.load?.(); } catch {}
+    el.src = src;
+    try { el.load?.(); } catch {}
   });
 }
+
 function safeHideVideo(el){
   try { el.pause(); } catch {}
   el.removeAttribute('src');
@@ -101,9 +130,11 @@ async function fetchJadwal() {
   const id = await resolveMedanId();
   const url = `https://api.myquran.com/v2/sholat/jadwal/${id}/${y}/${+m}/${+d}`;
   const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
   const j = json?.data?.jadwal;
   if (!j) throw new Error('Respon MyQuran tidak berisi jadwal');
+
   jadwalSholat = {
     subuh: j.subuh.slice(0, 5),
     dzuhur: j.dzuhur.slice(0, 5),
@@ -117,6 +148,15 @@ async function fetchJadwal() {
   setStatus('Jadwal dimuat');
 }
 
+// Retry otomatis untuk jadwal (jaringan TV kadang flakey)
+async function fetchJadwalWithRetry(tries=0){
+  try { await fetchJadwal(); }
+  catch(e){
+    setStatus('Jadwal gagal, mencoba ulang…');
+    if (tries < 3) setTimeout(()=>fetchJadwalWithRetry(tries+1), (tries+1)*5000);
+  }
+}
+
 // ====== CLOCK + PEMICU AUDIO ======
 let elClock, elStatus, adzanAudio, indoAudio;
 let lastPlayedAdzanKey = localStorage.getItem(LAST_ADZAN_KEY) || '';
@@ -124,7 +164,6 @@ let lastPlayedAdzanKey = localStorage.getItem(LAST_ADZAN_KEY) || '';
 function setStatus(text){
   if (!elStatus) elStatus = document.getElementById('status-pill');
   if (elStatus) elStatus.textContent = text;
-  try { console.log('[STATUS]', text); } catch {}
 }
 
 function updateClockAndTriggers() {
@@ -152,6 +191,16 @@ function updateClockAndTriggers() {
       }).catch(()=>{});
     }
   }
+}
+
+// Tick per detik dengan koreksi drift (lebih stabil di TV)
+let tickTimer = null;
+function scheduleNextTick(){
+  const ms = 1000 - (Date.now() % 1000) + 5; // +5ms buffer
+  tickTimer = setTimeout(() => {
+    updateClockAndTriggers();
+    scheduleNextTick();
+  }, ms);
 }
 
 // ====== AUTOPLAY PRIMING & UNLOCK ======
@@ -185,7 +234,7 @@ async function playLagu(audioEl) {
     if (!soundUnlocked) await primeAutoplay();
     audioEl.loop = false; audioEl.muted = false; audioEl.currentTime = 0; audioEl.volume = 1;
     if (audioEl.paused) await audioEl.play();
-  } catch (e) { console.warn('Play blocked:', e); throw e; }
+  } catch (e) { /* diam */ }
 }
 
 // ====== WAKE LOCK ======
@@ -197,7 +246,7 @@ async function requestWakeLock(){
       wakeLock.addEventListener('release', () => setStatus('Wake Lock lepas'));
       setStatus('Wake Lock aktif');
     }
-  } catch(e){ console.warn('WakeLock gagal:', e); }
+  } catch(e){ /* diam */ }
 }
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { requestWakeLock(); updateClockAndTriggers(); }
@@ -212,20 +261,21 @@ async function boot(){
   indoAudio  = document.getElementById('indonesia-raya');
 
   setStatus('Init…');
+
   await loadVideo();
-  await fetchJadwal();
+  await fetchJadwalWithRetry();
   await primeAutoplay();
   await requestWakeLock();
 
   // clock & triggers
-  updateClockAndTriggers();
-  setInterval(updateClockAndTriggers, 1000);
+  updateClockAndTriggers();  // tampilkan segera
+  scheduleNextTick();        // lalu detik demi detik
 
-  // refresh 00:10 WIB untuk hari baru
+  // refresh 00:10 WIB untuk hari baru (jadwal & video)
   setInterval(async ()=>{
     const { hh, mm } = getWIBParts();
     if (hh === '00' && mm === '10') {
-      await fetchJadwal();
+      await fetchJadwalWithRetry();
       await loadVideo();
       location.reload();
     }
