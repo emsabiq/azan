@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Signage Adzan + Video (Medan)</title>
 
-  <!-- Paksa base ke root; UBAH jika app di subfolder (mis. /azan/) -->
+  <!-- Ubah jika app di subfolder, mis. /azan/ -->
   <base href="/" />
 
-  <!-- CSS utama (pakai path absolut + versi untuk cache-bust) -->
   <link rel="stylesheet" href="/css/index-style.css?v=20250827" />
-
-  <!-- CSS fallback minimal jika stylesheet gagal dimuat -->
   <style>
+    /* Fallback CSS minimal jika stylesheet gagal dimuat */
     #bg-video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
     .widget-strip{position:fixed;left:0;right:0;bottom:0;padding:6px 10px;background:rgba(0,0,0,.40);
       color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
@@ -21,28 +19,16 @@
   </style>
 </head>
 <body>
-  <!-- Video latar; atribut langsung di HTML agar Tizen nurut -->
-  <video
-    id="bg-video"
-    muted
-    autoplay
-    loop
-    playsinline
-    webkit-playsinline
-    preload="auto"
-    disablepictureinpicture
-    controlslist="nodownload noplaybackrate noremoteplayback"
-    style="position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0;"
-  ></video>
+  <video id="bg-video" muted autoplay loop playsinline webkit-playsinline preload="auto"
+         disablepictureinpicture controlslist="nodownload noplaybackrate noremoteplayback"
+         style="position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0;"></video>
 
-  <!-- Widget strip bawah -->
   <div class="widget-strip" role="region" aria-label="Widget jadwal sholat">
     <div class="left">
       <span class="dot" aria-hidden="true" style="width:6px;height:6px;border-radius:50%;background:#66d1bf;display:inline-block"></span>
       <b id="current-time">--:--:--</b>
       <span class="tz">WIB • Asia/Jakarta</span>
     </div>
-
     <div class="mid">
       <span>Subuh: <b id="subuh">--:--</b></span>
       <span>Dzuhur: <b id="dzuhur">--:--</b></span>
@@ -50,20 +36,33 @@
       <span>Maghrib: <b id="maghrib">--:--</b></span>
       <span>Isya: <b id="isya">--:--</b></span>
     </div>
-
     <div class="right" id="status-pill">Memulai…</div>
   </div>
 
-  <!-- Audio -->
-  <audio id="adzan-audio" preload="auto">
-    <source src="/assets/adzan.mp3" type="audio/mpeg" />
-  </audio>
-  <audio id="indonesia-raya" preload="auto">
-    <source src="/assets/indonesia-raya.mp3" type="audio/mpeg" />
-  </audio>
+  <audio id="adzan-audio" preload="auto"><source src="/assets/adzan.mp3" type="audio/mpeg" /></audio>
+  <audio id="indonesia-raya" preload="auto"><source src="/assets/indonesia-raya.mp3" type="audio/mpeg" /></audio>
 
-  <!-- JS utama (path absolut + versi) -->
+  <!-- JS utama; kalau ke-cache/nyasar, fallback jam di bawah tetap jalan -->
   <script src="/js/app.js?v=20250827" defer></script>
+
+  <!-- Fallback jam WIB: selalu update tiap detik -->
+  <script>
+  (function(){
+    function pad2(n){return n<10?'0'+n:''+n;}
+    function wibTime(){
+      const now=new Date();
+      const utcMs=now.getTime()+now.getTimezoneOffset()*60000;
+      const w=new Date(utcMs+7*3600*1000);
+      return pad2(w.getUTCHours())+':'+pad2(w.getUTCMinutes())+':'+pad2(w.getUTCSeconds());
+    }
+    function tick(){
+      var el=document.getElementById('current-time');
+      if(el) el.textContent=wibTime();
+      setTimeout(tick, 1000-(Date.now()%1000)+5);
+    }
+    tick();
+  })();
+  </script>
 
   <noscript>Aktifkan JavaScript untuk menampilkan jam, jadwal, dan pemutar video.</noscript>
 </body>
