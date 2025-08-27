@@ -1,11 +1,14 @@
 :root{
   --bg:#0b1513; --ink:#e8f3f0; --muted:#aac0b9;
   --accent:#2f6f67; --accent2:#3f8f86;
-  /* Lebih transparan */
-  --strip: rgba(15, 27, 24, 0.52);
-  --pill:  rgba(20, 52, 46, 0.38);
-  /* Offset dari bawah (atur sesuai selera) */
-  --strip-offset: 926px;
+
+  /* Transparansi lebih ringan */
+  --strip: rgba(15, 27, 24, 0.40);
+  --pill:  rgba(20, 52, 46, 0.30);
+
+  /* Offset dari bawah (0px = rapat) */
+  --strip-offset: 0px;
+
   /* Ukuran font widget */
   --widget-font: 13px;
 }
@@ -24,16 +27,21 @@ body{
   object-fit:cover; background:#000;
 }
 
-/* Widget strip bawah (lebih kecil & sedikit naik/turun via --strip-offset) */
+/* Widget strip bawah (rapat ke tepi bawah + safe-area) */
 .widget-strip{
   position:fixed; left:0; right:0; bottom:var(--strip-offset);
+  z-index:10;
   display:flex; align-items:center; justify-content:space-between; gap:8px;
-  padding:6px 10px; background:var(--strip); backdrop-filter:blur(4px);
-  border-top:1px solid rgba(255,255,255,.06);
+  padding:6px 10px;
+  /* safe-area untuk perangkat modern */
+  padding-bottom: calc(6px + constant(safe-area-inset-bottom));
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+
+  background:var(--strip); backdrop-filter:blur(4px);
+  border-top:1px solid rgba(255,255,255,.05);
   font-variant-numeric:tabular-nums;
 }
 
-/* Komponen internal diperkecil gap-nya */
 .widget-strip .left,
 .widget-strip .mid,
 .widget-strip .right{
@@ -42,7 +50,7 @@ body{
 
 .widget-strip .mid{ justify-content:center; flex:1; }
 
-/* Pill status lebih kecil & transparan */
+/* Pill status kecil & transparan */
 .widget-strip .right{
   background:var(--pill);
   padding:4px 8px;
@@ -52,7 +60,6 @@ body{
   border:1px solid rgba(255,255,255,.05);
 }
 
-/* Detail kecil */
 .dot{ width:6px; height:6px; border-radius:50%; background:#66d1bf; display:inline-block; opacity:.9; }
 .tz{ color:var(--muted); font-size:11px; }
 .widget-strip .mid span{ font-size:var(--widget-font); }
