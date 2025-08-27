@@ -16,27 +16,48 @@ document.addEventListener('DOMContentLoaded', () => {
   if (isTV) document.documentElement.classList.add('tv-mode');
 });
 
-// ====== UTIL WAKTU WIB ======
+// ====== UTIL WAKTU WIB (Intl Asia/Jakarta, fallback manual UTC+7 bila perlu) ======
 function getWIBParts(d = new Date()) {
-  const parts = new Intl.DateTimeFormat('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  }).formatToParts(d);
-  const pick = t => parts.find(p => p.type === t)?.value;
-  return {
-    y: pick('year'), m: pick('month'), d: pick('day'),
-    hh: pick('hour'), mm: pick('minute'), ss: pick('second'),
-    hhmm: `${pick('hour')}:${pick('minute')}`,
-    hhmmss: `${pick('hour')}:${pick('minute')}:${pick('second')}`,
-    ymd: `${pick('year')}-${pick('month')}-${pick('day')}`
-  };
+  try {
+    const parts = new Intl.DateTimeFormat('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).formatToParts(d);
+    const pick = t => parts.find(p => p.type === t)?.value;
+    return {
+      y: pick('year'), m: pick('month'), d: pick('day'),
+      hh: pick('hour'), mm: pick('minute'), ss: pick('second'),
+      hhmm: `${pick('hour')}:${pick('minute')}`,
+      hhmmss: `${pick('hour')}:${pick('minute')}:${pick('second')}`,
+      ymd: `${pick('year')}-${pick('month')}-${pick('day')}`
+    };
+  } catch {
+    // Fallback manual UTC+7 (jaga-jaga kalau Intl/timeZone gak didukung)
+    const pad2 = n => (n < 10 ? '0' + n : '' + n);
+    const utcMs = d.getTime() + d.getTimezoneOffset() * 60000;
+    const w = new Date(utcMs + 7 * 3600 * 1000);
+    const y = w.getUTCFullYear(), m = pad2(w.getUTCMonth() + 1), dd = pad2(w.getUTCDate());
+    const hh = pad2(w.getUTCHours()), mm = pad2(w.getUTCMinutes()), ss = pad2(w.getUTCSeconds());
+    return { y, m, d: dd, hh, mm, ss, hhmm: `${hh}:${mm}`, hhmmss: `${hh}:${mm}:${ss}`, ymd: `${y}-${m}-${dd}` };
+  }
 }
 
 // ====== VIDEO LOADER (TV-SAFE, NO HEAD) ======
 async function loadVideo() {
   const el = document.getElementById('bg-video');
   if (!el) return;
+
+  // Matikan PiP/remote playback (lebih stabil di TV)
+  try {
+    el.disablePictureInPicture = true;
+    el.setAttribute('disablepictureinpicture', '');
+    el.disableRemotePlayback = true;
+    el.setAttribute('controlslist', 'nodownload noplaybackrate noremoteplayback');
+    el.playsInline = true;
+    el.setAttribute('playsinline', '');
+    el.autoplay = true; el.muted = true; el.loop = true; el.preload = 'auto';
+  } catch {}
 
   const { ymd } = getWIBParts();
   const candidates = [
@@ -72,6 +93,7 @@ function tryAttachVideo(el, src) {
     const onError = () => { if (done) return; done = true; cleanup(); resolve(false); };
     const timer = setTimeout(() => { if (!done) { done = true; cleanup(); resolve(false); } }, 6000);
 
+    // Pakai cache-bust (kamu sebut ini lancar di setup-mu)
     el.src = `${src}?v=${Date.now()}`;
     el.addEventListener('loadedmetadata', onLoaded, { once:true });
     el.addEventListener('error', onError, { once:true });
@@ -106,6 +128,7 @@ async function fetchJadwal() {
     maghrib: j.maghrib.slice(0, 5),
     isya: j.isya.slice(0, 5)
   };
+  // tampilkan di widget
   ['subuh','dzuhur','ashar','maghrib','isya'].forEach(k=>{
     const el = document.getElementById(k); if (el) el.textContent = jadwalSholat[k];
   });
@@ -113,9 +136,7 @@ async function fetchJadwal() {
 }
 
 // ====== CLOCK + PEMICU AUDIO ======
-// (DOM elements di-*bind* DI DALAM boot() agar tidak null)
 let elClock, elStatus, adzanAudio, indoAudio;
-
 let lastPlayedAdzanKey = localStorage.getItem(LAST_ADZAN_KEY) || '';
 
 function setStatus(text){
@@ -130,16 +151,20 @@ function updateClockAndTriggers() {
   if (!elClock) elClock = document.getElementById('current-time'); // re-bind bila perlu
   if (elClock) elClock.textContent = hhmmss;
 
+  // Indonesia Raya 09:59 (sekali per hari)
   const lastIndo = localStorage.getItem(LAST_INDONESIA_KEY);
   if (hhmm === '09:59' && lastIndo !== ymd) {
+    if (!indoAudio) indoAudio = document.getElementById('indonesia-raya');
     playLagu(indoAudio).then(()=>{
       localStorage.setItem(LAST_INDONESIA_KEY, ymd);
       setStatus('Indonesia Raya 09:59');
     }).catch(()=>{});
   }
 
+  // Adzan
   for (const key in jadwalSholat) {
     if (jadwalSholat[key] === hhmm && lastPlayedAdzanKey !== `${ymd}_${key}`) {
+      if (!adzanAudio) adzanAudio = document.getElementById('adzan-audio');
       playLagu(adzanAudio).then(()=>{
         lastPlayedAdzanKey = `${ymd}_${key}`;
         localStorage.setItem(LAST_ADZAN_KEY, lastPlayedAdzanKey);
@@ -153,6 +178,7 @@ function updateClockAndTriggers() {
 let soundUnlocked = false;
 async function primeAutoplay() {
   try {
+    if (!adzanAudio) adzanAudio = document.getElementById('adzan-audio');
     adzanAudio.loop = true;
     adzanAudio.muted = true;
     await adzanAudio.play();
