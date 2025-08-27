@@ -60,24 +60,40 @@
   </audio>
 
   <!-- JS utama -->
-  <script src="/js/app.js?v=2" defer></script>
+  <script src="/js/app.js?v=9" defer onload="window.__APPJS_LOADED__=true"></script>
 
-  <!-- Fallback jam WIB (benar, tidak double-correct) -->
+  <!-- Fallback jam WIB: AKTIF HANYA jika app.js belum update dalam 3 detik -->
   <script>
   (function(){
-    function p(n){return n<10?'0'+n:''+n;}
-    function wibTime(){
+    function pad(n){return n<10?'0'+n:''+n;}
+    function wibNow(){
       const now = new Date();
-      // WIB = waktu lokal + (offset lokal + 420 menit)
-      const wibMs = now.getTime() + (now.getTimezoneOffset() + 420) * 60 * 1000;
-      const w = new Date(wibMs);
-      return p(w.getUTCHours()) + ':' + p(w.getUTCMinutes()) + ':' + p(w.getUTCSeconds());
+      // lokal -> UTC -> WIB (+7 jam), lalu pakai getter UTC agar stabil
+      const utcMs = now.getTime() + now.getTimezoneOffset()*60000;
+      const w = new Date(utcMs + 7*3600*1000);
+      return pad(w.getUTCHours())+':'+pad(w.getUTCMinutes())+':'+pad(w.getUTCSeconds());
     }
-    (function tick(){
-      var el = document.getElementById('current-time');
-      if (el) el.textContent = wibTime();
-      setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
-    })();
+    function startFallback(){
+      if (window.__WIB_TICKER_FALLBACK__) return;
+      const tick = () => {
+        var el = document.getElementById('current-time');
+        if (el) el.textContent = wibNow();
+        window.__WIB_TICKER_FALLBACK__ = setTimeout(tick, 1000 - (Date.now()%1000) + 5);
+      };
+      tick();
+    }
+    window.addEventListener('DOMContentLoaded', function(){
+      // Tunggu app.js: kalau dalam 3s masih '--:--:--', hidupkan fallback
+      setTimeout(function(){
+        if (window.__WIB_TICKER__) return; // app.js anti-drift sudah aktif
+        var el = document.getElementById('current-time');
+        if (!el) return;
+        var t = (el.textContent||'').trim();
+        if (t === '' || t.indexOf('--') !== -1) {
+          startFallback();
+        }
+      }, 3000);
+    });
   })();
   </script>
 
