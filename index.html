@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>RO 2 Medan – Display TV</title>
+  <link rel="stylesheet" href="css/index-style.css"/>
+  <meta http-equiv="Permissions-Policy" content="autoplay=(self)">
+</head>
+<body>
+  <!-- Video fullscreen: mute+loop agar autoplay selalu jalan -->
+  <video id="bg-video" class="bg-video" autoplay muted loop playsinline poster="assets/poster.jpg"></video>
+
+  <!-- Widget strip (selalu aktif) -->
+  <div class="widget-strip" id="widget">
+    <div class="left">
+      <span class="dot"></span>
+      <span id="current-time">--:--:--</span>
+      <span class="tz">WIB</span>
+    </div>
+    <div class="mid">
+      <span>Subuh: <b id="subuh">--:--</b></span>
+      <span>Dzuhur: <b id="dzuhur">--:--</b></span>
+      <span>Ashar: <b id="ashar">--:--</b></span>
+      <span>Maghrib: <b id="maghrib">--:--</b></span>
+      <span>Isya: <b id="isya">--:--</b></span>
+    </div>
+    <div class="right" id="status-pill">Init…</div>
+  </div>
+
+  <!-- Audio players (dipakai skrip) -->
+  <audio id="adzan-audio" preload="auto">
+    <source src="assets/adzan.mp3" type="audio/mpeg"/>
+  </audio>
+  <audio id="indonesia-raya" preload="auto">
+    <source src="assets/indonesia-raya.mp3" type="audio/mpeg"/>
+  </audio>
+
+  <script src="js/app.js" defer></script>
+</body>
+</html>
