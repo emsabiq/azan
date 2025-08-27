@@ -1,18 +1,17 @@
 // ====== KONFIGURASI ======
-const VIDEO_BASE = 'videos'; // folder video di repo
-// Penamaan video harian: videos/YYYY-MM-DD.mp4 (zona WIB)
-// Fallback berurutan: latest.mp4 -> default.mp4 (di folder yang sama)
-
+const VIDEO_BASE = 'videos';
 const KOTA_CACHE_KEY = 'myq_kota_medan_id';
 const LAST_INDONESIA_KEY = 'lastPlayedIndonesia';
 const LAST_ADZAN_KEY = 'lastPlayedAdzanKey';
 
 // ====== FEATURE/FALLBACK UNTUK TV LAWAS ======
 document.addEventListener('DOMContentLoaded', () => {
-  const lackBackdrop = !(window.CSS && CSS.supports && (CSS.supports('backdrop-filter','blur(4px)') || CSS.supports('-webkit-backdrop-filter','blur(4px)')));
+  const lackBackdrop = !(window.CSS && CSS.supports &&
+    (CSS.supports('backdrop-filter','blur(4px)') || CSS.supports('-webkit-backdrop-filter','blur(4px)')));
   if (lackBackdrop) document.documentElement.classList.add('no-bdf');
 
-  const isTV = /Tizen|Web0S|WebOS|SmartTV|Hisense|AOSP|Android TV/i.test(navigator.userAgent) || new URLSearchParams(location.search).has('tv');
+  const isTV = /Tizen|Web0S|WebOS|SmartTV|Hisense|AOSP|Android TV/i.test(navigator.userAgent)
+            || new URLSearchParams(location.search).has('tv');
   if (isTV) document.documentElement.classList.add('tv-mode');
 });
 
@@ -31,12 +30,18 @@ function getWIBParts(d = new Date()) {
   return { y, m, d: dd, hh, mm, ss, hhmm: `${hh}:${mm}`, hhmmss: `${hh}:${mm}:${ss}`, ymd: `${y}-${m}-${dd}` };
 }
 
-// ====== VIDEO LOADER (TV-SAFE, NO HEAD) ======
+// ====== STATUS ======
+let elStatus = null;
+function setStatus(text){
+  if (!elStatus) elStatus = document.getElementById('status-pill');
+  if (elStatus) elStatus.textContent = text;
+}
+
+// ====== VIDEO LOADER (TV-SAFE) ======
 async function loadVideo() {
   const el = document.getElementById('bg-video');
   if (!el) return;
 
-  // Matikan PiP/remote playback (lebih stabil di TV)
   try {
     el.disablePictureInPicture = true;
     el.setAttribute('disablepictureinpicture', '');
@@ -81,7 +86,7 @@ function tryAttachVideo(el, src) {
     const onError = () => { if (done) return; done = true; cleanup(); resolve(false); };
     const timer = setTimeout(() => { if (!done) { done = true; cleanup(); resolve(false); } }, 6000);
 
-    // Pakai cache-bust (setup-mu lancar pakai ini)
+    // cache-bust
     el.src = `${src}?v=${Date.now()}`;
     el.addEventListener('loadedmetadata', onLoaded, { once:true });
     el.addEventListener('error', onError, { once:true });
@@ -116,7 +121,6 @@ async function fetchJadwal() {
     maghrib: j.maghrib.slice(0, 5),
     isya: j.isya.slice(0, 5)
   };
-  // tampilkan di widget
   ['subuh','dzuhur','ashar','maghrib','isya'].forEach(k=>{
     const el = document.getElementById(k); if (el) el.textContent = jadwalSholat[k];
   });
@@ -124,19 +128,12 @@ async function fetchJadwal() {
 }
 
 // ====== CLOCK + PEMICU AUDIO ======
-let elClock, elStatus, adzanAudio, indoAudio;
+let elClock, adzanAudio, indoAudio;
 let lastPlayedAdzanKey = localStorage.getItem(LAST_ADZAN_KEY) || '';
-
-function setStatus(text){
-  if (!elStatus) elStatus = document.getElementById('status-pill'); // re-bind bila perlu
-  if (elStatus) elStatus.textContent = text;
-  try { console.log('[STATUS]', text); } catch {}
-}
 
 function updateClockAndTriggers() {
   const { hhmmss, hhmm, ymd } = getWIBParts();
 
-  // selalu re-bind (aman di TV)
   elClock = document.getElementById('current-time');
   if (elClock) elClock.textContent = hhmmss;
 
@@ -185,7 +182,7 @@ async function primeAutoplay() {
     setStatus('Audio siap (primed)');
     removeUnlockHandlers();
   } catch (e) {
-    setStatus('Aktifkan suara: sentuh/klik/gerakkan');
+    setStatus('Aktifkan suara: sentuh/klik/OK');
     addUnlockHandlers();
   }
 }
@@ -194,21 +191,19 @@ function addUnlockHandlers() {
   window.addEventListener('pointerdown', once, { once:true });
   window.addEventListener('touchstart', once, { once:true });
   window.addEventListener('keydown', once, { once:true });
-  window.addEventListener('wheel', once, { once:true, passive:true });
-  window.addEventListener('pointermove', once, { once:true });
 }
 function removeUnlockHandlers() {
-  window.onpointerdown = window.ontouchstart = window.onkeydown = window.onwheel = window.onpointermove = null;
+  window.onpointerdown = window.ontouchstart = window.onkeydown = null;
 }
 async function playLagu(audioEl) {
   try {
     if (!soundUnlocked) await primeAutoplay();
     audioEl.loop = false; audioEl.muted = false; audioEl.currentTime = 0; audioEl.volume = 1;
     if (audioEl.paused) await audioEl.play();
-  } catch (e) { console.warn('Play blocked:', e); /* diam */ }
+  } catch (e) { /* diam */ }
 }
 
-// ====== WAKE LOCK (agar layar tidak sleep, jika didukung) ======
+// ====== WAKE LOCK ======
 let wakeLock = null;
 async function requestWakeLock(){
   try {
@@ -217,17 +212,17 @@ async function requestWakeLock(){
       wakeLock.addEventListener('release', () => setStatus('Wake Lock lepas'));
       setStatus('Wake Lock aktif');
     }
-  } catch(e){ console.warn('WakeLock gagal:', e); }
+  } catch(e){ /* diam */ }
 }
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { requestWakeLock(); updateClockAndTriggers(); }
 });
 
-// ====== SCHEDULERS / BOOT ======
+// ====== BOOT ======
 async function boot(){
-  // Bind elemen DOM SETELAH halaman siap
-  elClock  = document.getElementById('current-time');
+  // Bind DOM
   elStatus = document.getElementById('status-pill');
+  elClock  = document.getElementById('current-time');
   adzanAudio = document.getElementById('adzan-audio');
   indoAudio  = document.getElementById('indonesia-raya');
 
@@ -238,10 +233,10 @@ async function boot(){
   await requestWakeLock();
 
   // clock & triggers
-  updateClockAndTriggers();      // tampilkan segera
-  startWIBClock();               // ticker anti-drift (gantikan setInterval)
+  updateClockAndTriggers();
+  startWIBClock();
 
-  // refresh jadwal & video tiap hari 00:10 WIB
+  // refresh 00:10 WIB untuk hari baru (jadwal & video)
   setInterval(async ()=>{
     const { hh, mm } = getWIBParts();
     if (hh === '00' && mm === '10') {
@@ -251,10 +246,4 @@ async function boot(){
     }
   }, 30_000);
 }
-
-// Pastikan boot menunggu DOM jika script tidak pakai defer
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', boot);
-} else {
-  boot();
-}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
