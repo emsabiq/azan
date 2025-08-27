@@ -55,14 +55,19 @@ body{
 .widget-strip .mid{ justify-content:center; flex:1; }
 
 /* Status pill lebih kecil */
-.widget-strip .right{
-  background:var(--pill);
-  padding:3px 6px;
-  border-radius:999px;
-  font-size:10.5px;
-  color:#cfe9e2;
-  border:1px solid rgba(255,255,255,.05);
+.widget-strip{
+  position:fixed; bottom:0; left:50%; transform:translateX(-50%);
+  width:90vw; max-width:860px;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:6px 10px;
+  background:rgba(15,27,24,0.40);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:12px 12px 0 0;
+  z-index:9999;
+  font-variant-numeric:tabular-nums;
 }
+
 
 /* Detail mikro */
 .dot{ width:5px; height:5px; border-radius:50%; background:#66d1bf; display:inline-block; opacity:.9; }
@@ -97,3 +102,4 @@ b{ color:#cfe9e2 }
   -webkit-backdrop-filter:none;
   background: rgba(15,27,24,0.55);
 }
+
