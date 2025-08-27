@@ -37,21 +37,24 @@ function setStatus(text){
   if (elStatus) elStatus.textContent = text;
 }
 
-// ====== VIDEO LOADER (Tizen-safe) ======
+// ====== VIDEO LOADER (Tizen-safe + PiP off) ======
+function ensurePiPOff(video){
+  try {
+    video.disablePictureInPicture = true;
+    video.setAttribute('disablepictureinpicture','');
+    video.disableRemotePlayback = true;
+    video.setAttribute('controlslist','nodownload noplaybackrate noremoteplayback');
+  } catch {}
+}
+
 async function loadVideo() {
   const video = document.getElementById('bg-video');
   if (!video) return;
 
-  // set autoplay props **sebelum** pasang source
-  video.autoplay = true;
-  video.muted = true;
-  video.loop = true;
-  video.playsInline = true;
-  video.setAttribute('playsinline','');
-  video.preload = 'auto';
-
-  // Diagnostik dukungan codec (ditampilkan di pill)
-  diagnoseVideoSupport(video);
+  // Set flags autoplay di HTML sudah ada, set juga via JS (cadangan)
+  video.autoplay = true; video.muted = true; video.loop = true;
+  video.playsInline = true; video.setAttribute('playsinline',''); video.preload = 'auto';
+  ensurePiPOff(video);
 
   const { ymd } = getWIBParts();
   const candidates = [
@@ -65,23 +68,15 @@ async function loadVideo() {
     if (ok) {
       setStatus('Video siap');
       video.style.display = 'block';
-
-      // Keep-alive: kadang TV nge-pause sendiri
-      setInterval(() => { if (!video.paused && video.readyState >= 2) return; video.play().catch(()=>{}); }, 15000);
+      // Keep-alive: beberapa TV suka pause sendiri
+      setInterval(()=>{ if (video.paused && video.readyState >= 2) video.play().catch(()=>{}); }, 15000);
       return;
     }
   }
 
-  // Semua gagal → jangan bikin layar hitam
+  // Semua gagal → sembunyikan agar tidak layar hitam
   safeHideVideo(video);
   setStatus('Video gagal dimuat — hanya widget aktif');
-}
-
-function diagnoseVideoSupport(video){
-  const mp4 = video.canPlayType('video/mp4');
-  const avcMain = video.canPlayType('video/mp4; codecs="avc1.4D401E, mp4a.40.2"'); // H.264 Main + AAC-LC
-  const avcBase = video.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'); // H.264 Baseline + AAC-LC
-  setStatus(`Dukungan: mp4=${mp4||'no'} main=${avcMain||'no'} base=${avcBase||'no'}`);
 }
 
 function attachSourceAndPlay(video, src){
@@ -89,43 +84,37 @@ function attachSourceAndPlay(video, src){
     // Bersihkan source lama
     while (video.firstChild) video.removeChild(video.firstChild);
 
-    // Buat <source> utama (Main profile)
+    // Buat 2 source dengan deklarasi codec (Tizen picky)
     const s1 = document.createElement('source');
     s1.src = src; // TANPA query string
-    s1.type = 'video/mp4; codecs="avc1.4D401E, mp4a.40.2"';
+    s1.type = 'video/mp4; codecs="avc1.4D401E, mp4a.40.2"'; // H.264 Main + AAC-LC
 
-    // Fallback <source> kedua (Baseline profile)
     const s2 = document.createElement('source');
     s2.src = src;
-    s2.type = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"';
+    s2.type = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'; // H.264 Baseline + AAC-LC
 
-    video.appendChild(s1);
-    video.appendChild(s2);
+    video.appendChild(s1); video.appendChild(s2);
 
     let done = false;
     const finish = ok => { if (done) return; done = true; cleanup(); resolve(ok); };
     const cleanup = () => {
-      ['loadeddata','canplay','playing','error','stalled','suspend','emptied']
-        .forEach(ev => video.removeEventListener(ev, handlers[ev]));
-      if (timer) clearTimeout(timer);
+      ['loadeddata','canplay','playing','error'].forEach(ev => video.removeEventListener(ev, handlers[ev]));
+      clearTimeout(timer);
     };
 
     const handlers = {
       loadeddata: () => finish(true),
       canplay:    () => { video.play().catch(()=>{}); },
       playing:    () => finish(true),
-      stalled:    () => {}, // tunggu timeout
-      suspend:    () => {},
-      emptied:    () => {},
       error:      () => finish(false)
     };
 
     const timer = setTimeout(() => finish(false), IS_TV ? 20000 : 10000);
-    Object.keys(handlers).forEach(ev => video.addEventListener(ev, handlers[ev], { once: ev!=='stalled' && ev!=='suspend'}));
+    Object.keys(handlers).forEach(ev => video.addEventListener(ev, handlers[ev], { once:true }));
 
     try { video.load(); } catch {}
     video.play().catch(()=>{});
-    // Jika autoplay tetap diblok, tampilkan tombol manual
+    // Tombol manual (OK/Enter) bila autoplay ditolak
     setTimeout(() => { if (video.paused) showManualStart(video); }, 2500);
   });
 }
