@@ -2,103 +2,297 @@
 <html lang="id">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Signage Adzan + Video (Medan)</title>
-
-  <!-- CSS utama (RELATIF) -->
-  <link rel="stylesheet" href="css/index-style.css?v=6" />
-
-  <!-- Fallback CSS super-minimal bila file di atas gagal dimuat -->
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Signage Adzan (Medan) + Video Looping</title>
+  <meta name="color-scheme" content="dark light"/>
   <style>
-    #bg-video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
-    .widget-strip{
-      position:fixed;left:50%;transform:translateX(-50%);bottom:0;
-      width:clamp(260px,96vw,880px);padding:6px 10px; padding-bottom:calc(6px + env(safe-area-inset-bottom));
-      border-radius:12px 12px 0 0;
-      background:rgba(15,27,24,.45);color:#fff;display:flex;gap:8px;align-items:center;justify-content:space-between;
-      z-index:9999;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif
+    :root { --pill-bg: rgba(0,0,0,.45); --pill-fg:#fff; }
+    *{ box-sizing:border-box }
+    html,body{ height:100% }
+    body{
+      margin:0; background:#000; color:#fff; font:600 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overflow:hidden;
     }
-    .widget-strip .mid span{margin:0 6px}
-    .dot{width:6px;height:6px;border-radius:50%;background:#66d1bf;display:inline-block}
-    .right{background:rgba(20,52,46,.35);padding:4px 8px;border-radius:999px;font-size:12px}
+    /* Video full-bleed */
+    #bg-video{
+      position:fixed; inset:0; width:100%; height:100%;
+      object-fit:cover; background:#000; z-index:0;
+    }
+
+ /* Status pill (tetap kanan atas) */
+#status-pill{
+  position:fixed; right:12px; top:12px; z-index:20;
+  background:var(--pill-bg); color:var(--pill-fg);
+  padding:6px 10px; border-radius:999px; font-weight:700;
+}
+
+/* Widget persis di bawah status, rata kanan */
+#widget{
+  position:fixed; right:12px; top:calc(12px + 36px + 8px); /* 36px tinggi pill + jarak */
+  background:var(--pill-bg); color:var(--pill-fg);
+  padding:8px 12px; border-radius:12px; z-index:19;
+  font-size:13px;
+  display:flex; flex-direction:column; align-items:flex-end; gap:4px;
+  max-width:220px; /* lebih ramping supaya tidak nyerobot konten */
+}
+#widget .line-time{ font-weight:700; font-size:14px }
+#widget .line-sholat{ font-size:13px; text-align:right; }
+#widget b{ font-weight:800 }
+
+
+    /* TV mode: font sedikit diperbesar */
+    .tv-mode #widget{ font-size:16px; padding:12px 16px; border-radius:16px }
+    .tv-mode #status-pill{ font-size:12px }
+    @media (max-width:480px){
+      #widget{ font-size:13px; max-width:92vw }
+    }
   </style>
 </head>
 <body>
-  <!-- Video latar -->
-  <video
-    id="bg-video"
-    muted autoplay loop playsinline webkit-playsinline preload="auto"
-    disablepictureinpicture controlslist="nodownload noplaybackrate noremoteplayback"
-    aria-hidden="true"
-  ></video>
 
-  <!-- Widget jadwal -->
-  <div class="widget-strip" role="region" aria-label="Widget jadwal sholat">
-    <div class="left">
-      <span class="dot" aria-hidden="true"></span>
-      <b id="current-time" aria-live="polite">--:--:--</b>
-      <span class="tz">WIB • Asia/Jakarta</span>
-    </div>
+  <!-- VIDEO BACKGROUND -->
+  <video id="bg-video" muted playsinline preload="auto" loop></video>
 
-    <div class="mid">
-      <span>Subuh: <b id="subuh">--:--</b></span>
-      <span>Dzuhur: <b id="dzuhur">--:--</b></span>
-      <span>Ashar: <b id="ashar">--:--</b></span>
-      <span>Maghrib: <b id="maghrib">--:--</b></span>
-      <span>Isya: <b id="isya">--:--</b></span>
-    </div>
+  <!-- STATUS -->
+  <div id="status-pill">Init…</div>
 
-    <div class="right" id="status-pill">Memulai…</div>
+  <!-- WIDGET JAM + JADWAL (Medan) -->
+  <div id="widget" aria-live="polite">
+    <span id="current-time">--:--:--</span>
+    <span class="sep">|</span>
+    Subuh <b id="subuh">--:--</b>
+    <span class="sep">•</span>
+    Zuhur <b id="dzuhur">--:--</b>
+    <span class="sep">•</span>
+    Ashar <b id="ashar">--:--</b>
+    <span class="sep">•</span>
+    Maghrib <b id="maghrib">--:--</b>
+    <span class="sep">•</span>
+    Isya <b id="isya">--:--</b>
   </div>
 
-  <!-- Audio -->
-  <audio id="adzan-audio" preload="auto">
-    <source src="assets/adzan.mp3" type="audio/mpeg" />
-  </audio>
-  <audio id="indonesia-raya" preload="auto">
-    <source src="assets/indonesia-raya.mp3" type="audio/mpeg" />
-  </audio>
-
-  <!-- Fallback clock aman untuk Tizen (aktif hanya jika app.js tidak update jam) -->
   <script>
-  (function(){
-    function pad2(n){ return n<10?'0'+n:''+n; }
-    function getWIB(){
-      var now=new Date();
-      var localOffsetMin = -now.getTimezoneOffset();  // WIB = +420
-      var deltaMin = 420 - localOffsetMin;            // konversi dari zona lokal -> WIB
-      var t = new Date(now.getTime() + deltaMin*60000);
-      return pad2(t.getHours())+':'+pad2(t.getMinutes())+':'+pad2(t.getSeconds());
-    }
-    function startFallback(){
-      if (window.__fallbackClockRunning) return;
-      window.__fallbackClockRunning = true;
-      function tick(){
-        var el=document.getElementById('current-time');
-        if (el) el.textContent=getWIB();
-      }
-      function schedule(){
-        var ms=1000 - (Date.now()%1000) + 5;
-        window.__fallbackTimer = setTimeout(function(){ tick(); schedule(); }, ms);
-      }
-      tick(); schedule();
-    }
-    function watchdog(){
-      var el=document.getElementById('current-time');
-      if (!el){ startFallback(); return; }
-      var first = el.textContent;
-      setTimeout(function(){
-        var second = el.textContent;
-        // Start fallback jika jam belum diupdate (masih placeholder / tidak berubah)
-        if (second === first || second.indexOf('--') !== -1){ startFallback(); }
-      }, 1600);
-    }
-    if (document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', watchdog); }
-    else { watchdog(); }
-  })();
-  </script>
+  // ====== KONFIG (fokus: jadwal adzan & video looping) ======
+  const VIDEO_BASE = 'videos';
+  const KOTA_CACHE_KEY = 'myq_kota_medan_id';
+  const TIME_ADJ_KEY  = 'wib_adj_min'; // koreksi manual menit: ?adj=+/-angka
+  const IS_TV = /Tizen|Web0S|WebOS|SmartTV|Hisense|AOSP|Android TV/i.test(navigator.userAgent)
+             || new URLSearchParams(location.search).has('tv');
 
-  <!-- JS utama (RELATIF) -->
-  <script src="js/app.js?v=7" defer></script>
+  // ====== STATUS + posisikan widget tepat di bawahnya ======
+  let _elStatus = null, _elWidget = null;
+  function placeWidgetBelowStatus(){
+    if (!_elStatus) _elStatus = document.getElementById('status-pill');
+    if (!_elWidget) _elWidget = document.getElementById('widget');
+    if (!_elStatus || !_elWidget) return;
+
+    const r = _elStatus.getBoundingClientRect();
+    const top = Math.round(r.bottom + 8); // 8px jarak
+    _elWidget.style.top = top + 'px';
+    _elWidget.style.right = '12px';
+    _elWidget.style.left = 'auto';
+    _elWidget.style.bottom = 'auto';
+    _elWidget.style.transform = 'none';
+  }
+  function setStatus(t){
+    if (!_elStatus) _elStatus = document.getElementById('status-pill');
+    if (_elStatus) _elStatus.textContent = t;
+    requestAnimationFrame(placeWidgetBelowStatus);
+    console.log('[STATUS]', t);
+  }
+
+  // ====== INIT KELAS TV MODE ======
+  document.addEventListener('DOMContentLoaded', () => {
+    if (IS_TV) document.documentElement.classList.add('tv-mode');
+    placeWidgetBelowStatus();
+  });
+  window.addEventListener('resize', placeWidgetBelowStatus);
+
+  // ====== WIB HELPERS (+ offset manual) ======
+  function pad2(n){ return n<10 ? '0'+n : ''+n }
+  function getAdjMin(){
+    const qp = new URLSearchParams(location.search);
+    if (qp.has('adj')){
+      const v = parseInt(qp.get('adj'),10) || 0;
+      localStorage.setItem(TIME_ADJ_KEY, String(v));
+      return v;
+    }
+    return parseInt(localStorage.getItem(TIME_ADJ_KEY) || '0', 10);
+  }
+  function getWIBParts(now = new Date()){
+    const localOffsetMin = -now.getTimezoneOffset();   // timur UTC positif
+    const deltaMin = 420 - localOffsetMin;             // 420 = UTC+7 (WIB)
+    const adj = getAdjMin();                           // koreksi manual menit
+    const t = new Date(now.getTime() + (deltaMin + adj) * 60000);
+    const y  = t.getFullYear();
+    const m  = pad2(t.getMonth()+1);
+    const d  = pad2(t.getDate());
+    const hh = pad2(t.getHours());
+    const mm = pad2(t.getMinutes());
+    const ss = pad2(t.getSeconds());
+    return { y,m,d,hh,mm,ss, ymd:`${y}-${m}-${d}`, hhmm:`${hh}:${mm}`, hhmmss:`${hh}:${mm}:${ss}` };
+  }
+
+  // ====== fetch JSON (fallback XHR untuk TV lama/CORS) ======
+  async function fetchJSON(url){
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      return await r.json();
+    } catch {
+      setStatus('Fetch fallback (XHR)…');
+      return new Promise((res, rej)=>{
+        try{
+          const x = new XMLHttpRequest();
+          x.open('GET', url, true);
+          x.responseType = 'text';
+          x.onreadystatechange = ()=>{
+            if (x.readyState === 4){
+              if (x.status >= 200 && x.status < 300) {
+                try { res(JSON.parse(x.responseText)); }
+                catch(e){ rej(e); }
+              } else rej(new Error('HTTP '+x.status));
+            }
+          };
+          x.timeout = 8000;
+          x.ontimeout = ()=>rej(new Error('XHR timeout'));
+          x.send();
+        } catch(e){ rej(e); }
+      });
+    }
+  }
+
+  // ====== MyQuran v2: ambil ID Medan + jadwal hari ini ======
+  let jadwalSholat = {};
+  async function resolveMedanId(){
+    const c = localStorage.getItem(KOTA_CACHE_KEY);
+    if (c) return c;
+    const json = await fetchJSON('https://api.myquran.com/v2/sholat/kota/semua');
+    const list = json?.data || [];
+    const kota = list.find(k => /^kota\s*medan$/i.test(k.lokasi))
+              || list.find(k => /^medan$/i.test(k.lokasi));
+    if (!kota) throw new Error('Kota Medan tidak ditemukan di MyQuran');
+    localStorage.setItem(KOTA_CACHE_KEY, kota.id);
+    return kota.id;
+  }
+  async function fetchJadwalHariIni(){
+    const { y, m, d } = getWIBParts();
+    const id = await resolveMedanId();
+    const json = await fetchJSON(`https://api.myquran.com/v2/sholat/jadwal/${id}/${y}/${+m}/${+d}`);
+    const j = json?.data?.jadwal;
+    if (!j) throw new Error('Respon MyQuran tidak berisi jadwal');
+
+    const norm = s => (s||'').slice(0,5);
+    jadwalSholat = {
+      subuh:   norm(j.subuh),
+      dzuhur:  norm(j.dzuhur),
+      ashar:   norm(j.ashar),
+      maghrib: norm(j.maghrib),
+      isya:    norm(j.isya)
+    };
+
+    // render
+    const map = { subuh:'subuh', dzuhur:'dzuhur', ashar:'ashar', maghrib:'maghrib', isya:'isya' };
+    Object.keys(map).forEach(k=>{
+      const el = document.getElementById(map[k]); if (el) el.textContent = jadwalSholat[k];
+    });
+    setStatus('Jadwal dimuat');
+  }
+
+  // ====== CLOCK ringan ======
+  let elClock = null, lastClockText = '';
+  function tickClock(){
+    const { hhmmss } = getWIBParts();
+    if (!elClock) elClock = document.getElementById('current-time');
+    if (elClock && hhmmss !== lastClockText){
+      elClock.textContent = hhmmss;
+      lastClockText = hhmmss;
+    }
+  }
+  (function loopClock(){
+    const ms = 1000 - (Date.now() % 1000) + 5;
+    setTimeout(()=>{ try{ tickClock(); } finally{ loopClock(); } }, ms);
+  })();
+
+  // ====== VIDEO LOOPING (TV-safe) ======
+  async function loadLoopVideo(){
+    const el = document.getElementById('bg-video');
+    if (!el) return;
+
+    try {
+      el.disablePictureInPicture = true;
+      el.setAttribute('disablepictureinpicture','');
+      el.disableRemotePlayback = true;
+      el.setAttribute('controlslist','nodownload noplaybackrate noremoteplayback');
+      el.autoplay = true; el.muted = true; el.loop = true; el.preload = 'auto';
+      el.playsInline = true; el.setAttribute('playsinline','');
+    } catch {}
+
+    const { ymd } = getWIBParts();
+    const candidates = [
+      `${VIDEO_BASE}/${ymd}.mp4`,   // video harian
+      `${VIDEO_BASE}/latest.mp4`,   // paling baru
+      `${VIDEO_BASE}/default.mp4`   // fallback statis
+    ];
+
+    for (const src of candidates){
+      const ok = await tryAttachVideo(el, src);
+      if (ok){ setStatus(`Video siap: ${src.split('/').pop()}`); return; }
+    }
+    el.removeAttribute('src'); try{ el.load?.(); }catch{}
+    setStatus('Video gagal — halaman tetap jalan tanpa video');
+  }
+  function tryAttachVideo(el, src){
+    return new Promise((resolve)=>{
+      let done = false;
+      const cleanup = ()=>{
+        el.removeEventListener('loadedmetadata', onLoaded, true);
+        el.removeEventListener('error', onError, true);
+        clearTimeout(timer);
+      };
+      const onLoaded = ()=>{
+        if (done) return; done = true; cleanup();
+        el.play().catch(()=>{});
+        resolve(true);
+      };
+      const onError = ()=>{
+        if (done) return; done = true; cleanup();
+        resolve(false);
+      };
+      const timer = setTimeout(()=>{
+        if (!done){ done = true; cleanup(); resolve(false); }
+      }, 6000);
+
+      el.src = `${src}?v=${Date.now()}`; // cache-bust untuk TV
+      el.addEventListener('loadedmetadata', onLoaded, { once:true, capture:true });
+      el.addEventListener('error', onError, { once:true, capture:true });
+    });
+  }
+
+  // ====== REFRESH saat ganti hari (WIB) ======
+  let lastYMD = '';
+  async function boot(){
+    setStatus('Init…');
+    placeWidgetBelowStatus();
+    await loadLoopVideo();
+    await fetchJadwalHariIni();
+    lastYMD = getWIBParts().ymd;
+
+    // Cek pergantian hari tiap 30 detik (buffer 5 menit)
+    setInterval(async ()=>{
+      const { ymd, hhmm } = getWIBParts();
+      if (ymd !== lastYMD && hhmm >= '00:05'){
+        lastYMD = ymd;
+        await fetchJadwalHariIni().catch(()=>{});
+        await loadLoopVideo().catch(()=>{});
+        placeWidgetBelowStatus();
+      }
+    }, 30000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+
+  // log error agar mudah tracing di TV
+  window.addEventListener('error', e => console.warn('Error:', e.message||e), { passive:true });
+  window.addEventListener('unhandledrejection', e => console.warn('Rejection:', e.reason||e), { passive:true });
+  </script>
 </body>
 </html>
